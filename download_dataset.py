@@ -1,45 +1,22 @@
-"""
-Download Wikipedia Movies dataset from Kaggle using kagglehub.
-"""
 import kagglehub
 import os
+import shutil
 
+# Download dataset from Kaggle
+print("Downloading dataset...")
+cache_path = kagglehub.dataset_download("exactful/wikipedia-movies")
 
-def download_wikipedia_movies_dataset():
-    """Download the latest version of the Wikipedia Movies dataset."""
-    print("Downloading 'exactful/wikipedia-movies' dataset from Kaggle...")
-    
-    # Download latest version
-    path = kagglehub.dataset_download("exactful/wikipedia-movies")
-    
-    print(f"\nDataset path: {path}")
-    
-    # List files
-    if os.path.exists(path):
-        files = os.listdir(path)
-        if files:
-            for f in sorted(files):
-                filepath = os.path.join(path, f)
-                size = os.path.getsize(filepath) / (1024*1024)  # MB
-                print(f"  - {f} ({size:.1f} MB)")
-        else:
-            parent = os.path.dirname(path)
-            if os.path.exists(parent):
-                all_files = []
-                for root, dirs, filenames in os.walk(parent):
-                    for filename in filenames:
-                        if filename.endswith('.csv'):
-                            full_path = os.path.join(root, filename)
-                            all_files.append(full_path)
-                            size = os.path.getsize(full_path) / (1024*1024)
-                            print(f"  - {full_path} ({size:.1f} MB)")
-                
-                if all_files:
-                    return all_files[0].rsplit('/', 1)[0]  # Return directory
-    
-    return path
+# Create data folder in repo
+os.makedirs("data", exist_ok=True)
 
+# Copy all CSV files to data folder
+print(f"\nCopying files to ./data/")
+for file in os.listdir(cache_path):
+    if file.endswith('.csv'):
+        src = os.path.join(cache_path, file)
+        dst = os.path.join("data", file)
+        shutil.copy2(src, dst)
+        size = os.path.getsize(dst) / (1024*1024)
+        print(f"  ✓ {file} ({size:.1f} MB)")
 
-if __name__ == "__main__":
-    dataset_path = download_wikipedia_movies_dataset()
-    print(f"\nDataset path: {dataset_path}")
+print(f"\nDone! Files are in: {os.path.abspath('data')}")
