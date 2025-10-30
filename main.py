@@ -6,7 +6,7 @@ import pandas as pd
 import sys
 sys.path.append('Components')
 from Tokenizer import tokenize
-from Indexer import build_index
+import Indexer
 
 print("="*80)
 print("Wikipedia Movies Retrieval System")
@@ -105,10 +105,10 @@ for i in range(3):
 # Build inverted index
 print("\n[6/7] Building Inverted Index...")
 print("-"*80)
-index = build_index(all_movies)
+Indexer.build_index(all_movies)
 
 # Index statistics
-stats = index.get_stats()
+stats = Indexer.get_stats()
 print(f"\nIndex Statistics:")
 print(f"  - Documents indexed: {stats['num_documents']:,}")
 print(f"  - Vocabulary size: {stats['vocabulary_size']:,}")
@@ -120,11 +120,11 @@ print("\n[7/7] Example Index Entries:")
 print("-"*80)
 example_terms = ['love', 'kill', 'friend', 'family', 'death']
 for term in example_terms:
-    postings = index.get_postings(term)
-    doc_freq = index.get_document_frequency(term)
+    postings = Indexer.get_postings(term)
+    doc_freq = Indexer.get_document_frequency(term)
     print(f"\nTerm: '{term}'")
     print(f"  Document frequency: {doc_freq}")
-    print(f"  Sample postings (doc_id, freq): {postings[:5]}")
+    print(f"  Sample postings (doc_id: freq): {list(postings.items())[:5]}")
 
 print("\n" + "="*80)
 print("System initialized successfully!")

@@ -1,131 +1,98 @@
 """
-Indexer Component - Builds inverted index from documents
-
-An inverted index maps each term to the list of documents containing it.
-Structure: {term: [(doc_id, frequency), (doc_id, frequency), ...]}
-
-This is the most efficient data structure for document retrieval.
+Indexer - SPIMI In-Memory Inverted Index
+Based on Manning et al. IIR Ch.4 Section 4.3
 """
 
 from collections import defaultdict, Counter
 
-class InvertedIndex:
+# Index structures (term -> {doc_id: tf})
+index = defaultdict(dict)
+
+# Document terms (doc_id -> {term: tf}) - for efficient doc norm computation
+doc_terms = defaultdict(dict)
+
+# Metadata
+doc_metadata = {}
+doc_len = {}
+term_cf = defaultdict(int)
+collection_tokens = 0
+num_documents = 0
+
+
+def add_document(doc_id, tokens, metadata=None):
     """
-    Inverted index data structure for efficient document retrieval.
-    Maps terms to posting lists (document IDs and term frequencies).
+    Add document to index using SPIMI algorithm.
+    
+    Args:
+        doc_id: Document identifier
+        tokens: List of tokens
+        metadata: Dict with title, decade, plot
     """
+    global num_documents, collection_tokens
     
-    def __init__(self):
-        # Main index: term -> list of (doc_id, term_frequency)
-        self.index = defaultdict(list)
-        
-        # Document metadata
-        self.doc_metadata = {}  # doc_id -> {title, decade, etc}
-        
-        # Statistics
-        self.num_documents = 0
-        self.vocabulary = set()
-        
-    def add_document(self, doc_id, tokens, metadata=None):
-        """
-        Add a document to the index.
-        
-        Args:
-            doc_id: Unique document identifier
-            tokens: List of tokens from the document
-            metadata: Optional dict with document metadata (title, decade, etc)
-        """
-        # Count term frequencies in document
-        term_freq = Counter(tokens)
-        
-        # Add to inverted index
-        for term, freq in term_freq.items():
-            self.index[term].append((doc_id, freq))
-            self.vocabulary.add(term)
-        
-        # Store metadata
-        if metadata:
-            self.doc_metadata[doc_id] = metadata
-        
-        self.num_documents += 1
+    # Count term frequencies
+    term_counts = Counter(tokens)
     
-    def get_postings(self, term):
-        """
-        Get posting list for a term.
-        
-        Args:
-            term: The term to look up
-            
-        Returns:
-            List of (doc_id, frequency) tuples, or empty list if term not found
-        """
-        return self.index.get(term, [])
+    # Update index: term -> {doc_id: tf}
+    for term, tf in term_counts.items():
+        index[term][doc_id] = tf
+        doc_terms[doc_id][term] = tf
+        term_cf[term] += tf
     
-    def get_document_frequency(self, term):
-        """
-        Get document frequency (number of documents containing the term).
-        
-        Args:
-            term: The term to look up
-            
-        Returns:
-            Number of documents containing the term
-        """
-        return len(self.index.get(term, []))
+    # Store metadata and stats
+    if metadata:
+        doc_metadata[doc_id] = metadata
     
-    def get_stats(self):
-        """
-        Get index statistics.
-        
-        Returns:
-            Dict with index statistics
-        """
-        total_postings = sum(len(postings) for postings in self.index.values())
-        
-        return {
-            'num_documents': self.num_documents,
-            'vocabulary_size': len(self.vocabulary),
-            'total_postings': total_postings,
-            'avg_postings_per_term': total_postings / len(self.vocabulary) if self.vocabulary else 0
-        }
-    
-    def __len__(self):
-        """Return number of unique terms in index."""
-        return len(self.vocabulary)
+    doc_len[doc_id] = len(tokens)
+    collection_tokens += len(tokens)
+    num_documents += 1
+
+
+def get_postings(term):
+    """Get postings for term: {doc_id: tf}"""
+    return index.get(term, {})
+
+
+def get_document_frequency(term):
+    """Get document frequency (number of docs containing term)"""
+    return len(index.get(term, {}))
+
+
+def get_collection_frequency(term):
+    """Get collection frequency (total occurrences across all docs)"""
+    return term_cf.get(term, 0)
+
+
+def get_stats():
+    """Get index statistics"""
+    return {
+        'num_documents': num_documents,
+        'vocabulary_size': len(index),
+        'collection_tokens': collection_tokens,
+        'total_postings': sum(len(p) for p in index.values()),
+        'avg_postings_per_term': sum(len(p) for p in index.values()) / len(index) if index else 0
+    }
 
 
 def build_index(documents_df):
     """
-    Build inverted index from a dataframe of documents.
+    Build inverted index from dataframe.
     
     Args:
-        documents_df: DataFrame with columns: tokens, title, decade, etc.
-        
-    Returns:
-        InvertedIndex object
+        documents_df: DataFrame with columns: tokens, title, decade, plot
     """
     print("Building inverted index...")
     
-    index = InvertedIndex()
-    
-    # Index each document
     for idx, row in documents_df.iterrows():
-        doc_id = idx  # Use dataframe index as doc_id
-        tokens = row['tokens']
-        
-        # Store metadata
         metadata = {
             'title': row['title'],
             'decade': row['decade'],
             'plot': row['plot']
         }
         
-        index.add_document(doc_id, tokens, metadata)
+        add_document(idx, row['tokens'], metadata)
         
-        # Progress indicator
         if (idx + 1) % 5000 == 0:
             print(f"  Indexed {idx + 1} documents...")
     
-    print(f"  ✓ Indexed {index.num_documents} documents")
-    
-    return index
+    print(f"  ✓ Indexed {num_documents} documents")
