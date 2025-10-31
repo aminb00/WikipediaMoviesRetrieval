@@ -102,31 +102,51 @@ for i in range(3):
     print(f"   Original plot length: {len(movie['plot'])} chars")
     print(f"   Tokens ({len(movie['tokens'])}): {movie['tokens'][:15]}...")
 
-# Build inverted index
-print("\n[6/7] Building Inverted Index...")
+# Build inverted index using SPIMI (memory-resident)
+print("\n[6/7] Building Inverted Index (SPIMI)...")
 print("-"*80)
-Indexer.build_index(all_movies)
+
+# Initialize indexer state
+index_state = Indexer.init_memory()
+
+# Index all documents
+for idx, row in all_movies.iterrows():
+    title = str(row['title'])
+    text = str(row['title']) + ' ' + str(row['plot'])
+    Indexer.index_doc_mem(index_state, title, text)
+    
+    if (idx + 1) % 5000 == 0:
+        print(f"  Indexed {idx + 1} documents...")
+
+print(f"  ✓ Indexed {index_state['next_id']} documents")
 
 # Index statistics
-stats = Indexer.get_stats()
+num_docs = index_state['next_id']
+vocab_size = len(index_state['index'])
+total_postings = sum(len(postings) for postings in index_state['index'].values())
+avg_postings = total_postings / vocab_size if vocab_size > 0 else 0
+
 print(f"\nIndex Statistics:")
-print(f"  - Documents indexed: {stats['num_documents']:,}")
-print(f"  - Vocabulary size: {stats['vocabulary_size']:,}")
-print(f"  - Total postings: {stats['total_postings']:,}")
-print(f"  - Avg postings per term: {stats['avg_postings_per_term']:.1f}")
+print(f"  - Documents indexed: {num_docs:,}")
+print(f"  - Vocabulary size: {vocab_size:,}")
+print(f"  - Total postings: {total_postings:,}")
+print(f"  - Avg postings per term: {avg_postings:.1f}")
 
 # Show some example postings
 print("\n[7/7] Example Index Entries:")
 print("-"*80)
 example_terms = ['love', 'kill', 'friend', 'family', 'death']
 for term in example_terms:
-    postings = Indexer.get_postings(term)
-    doc_freq = Indexer.get_document_frequency(term)
+    postings = Indexer.postings_mem(index_state, term)
+    doc_freq = len(postings)
     print(f"\nTerm: '{term}'")
     print(f"  Document frequency: {doc_freq}")
     print(f"  Sample postings (doc_id: freq): {list(postings.items())[:5]}")
 
 print("\n" + "="*80)
 print("System initialized successfully!")
-print(f"Ready to search {len(all_movies):,} movies with {len(vocabulary):,} unique terms")
+print(f"Ready to search {num_docs:,} movies with {vocab_size:,} unique terms")
 print("="*80)
+
+# Store index state globally for later use (querying, ranking)
+all_movies.index_state = index_state
