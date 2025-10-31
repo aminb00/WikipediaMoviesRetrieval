@@ -1,64 +1,91 @@
 """
-Tokenizer for document retrieval system using NLTK.
-Converts text into tokens (normalized words).
+Simple Tokenizer (Functional, Minimal)
+Reference: Manning et al. IIR Ch.2 §2.2.1-2.2.3
 
-Tokenization steps:
-1. Tokenize using NLTK word_tokenize
-2. Lowercase conversion
-3. Remove punctuation and non-alphabetic tokens
-4. Remove stopwords (using NLTK's stopwords)
-5. Optional: Stemming with Porter Stemmer (LEMMATIZATION CAN BE ADDED LATER)
+Features:
+- Case folding (lowercase)
+- Diacritics removal
+- Optional stopword removal
 """
 
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
+import re
+import unicodedata
 
-# Download required NLTK data (only runs once)
 try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    nltk.download('punkt_tab', quiet=True)
+    import spacy
+    from spacy.lang.en.stop_words import STOP_WORDS as SPACY_STOP_WORDS
+    _spacy_available = True
+except Exception:
+    spacy = None
+    SPACY_STOP_WORDS = set()
+    _spacy_available = False
+
+_nlp = None
+if _spacy_available:
+    try:
+        _nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "senter", "textcat"])
+    except Exception:
+        _nlp = None
+
+
+def _strip_diacritics(text: str):
+    """Remove diacritics. Reference: IIR Ch.2 §2.2.1."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def _normalize(text: str):
+    """Normalize text: lowercase + diacritics removal."""
+    return _strip_diacritics(text.lower())
+
+
+class Tokenizer:
+    """Simple tokenizer with normalization and optional stopword removal."""
     
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
-
-# Load English stopwords
-STOPWORDS = set(stopwords.words('english'))
-
-# Initialize stemmer
-stemmer = PorterStemmer()
-
-def tokenize(text, use_stemming=True):
-    """
-    Convert text into list of tokens using NLTK.
-    
-    Args:
-        text (str): Input text to tokenize
-        use_stemming (bool): Whether to apply stemming (default: True)
+    def __init__(self, remove_stopwords: bool = False):
+        """Initialize tokenizer.
         
-    Returns:
-        list: List of normalized tokens
-    """
-    if not text or not isinstance(text, str):
-        return []
+        Args:
+            remove_stopwords: Remove stopwords if True (default: False)
+        """
+        self.remove_stopwords = remove_stopwords
     
-    # Step 1: Tokenize with NLTK
-    tokens = word_tokenize(text.lower())
+    def tokenize(self, text: str):
+        """Tokenize text. Returns list of tokens."""
+        if not text or not isinstance(text, str):
+            return []
+        
+        text_norm = _normalize(text)
+        
+        # Use spaCy if available
+        if _nlp:
+            doc = _nlp(text_norm)
+            tokens = []
+            for t in doc:
+                if t.is_space or t.is_punct:
+                    continue
+                tok = t.lemma_.lower() if t.lemma_ != "-PRON-" else t.text.lower()
+                if not self.remove_stopwords or tok not in SPACY_STOP_WORDS:
+                    tokens.append(tok)
+            return tokens
+        
+        # Fallback: simple regex tokenization
+        tokens = re.findall(r"[a-z0-9]+", text_norm)
+        if self.remove_stopwords:
+            tokens = [t for t in tokens if t not in SPACY_STOP_WORDS]
+        return tokens
     
-    # Step 2: Keep only alphabetic tokens (removes punctuation, numbers)
-    tokens = [t for t in tokens if t.isalpha()]
+    def __call__(self, text: str):
+        """Shortcut: tokenizer(text) -> tokenize(text)."""
+        return self.tokenize(text)
     
-    # Step 3: Remove stopwords and short tokens
-    tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
-    
-    # Step 4: Optional stemming (reduces words to root form)
-    if use_stemming:
-        tokens = [stemmer.stem(t) for t in tokens]
-    
-    return tokens
+    def __repr__(self):
+        stopwords_status = "on" if self.remove_stopwords else "off"
+        spacy_status = "on" if _nlp else "off"
+        return f"Tokenizer(spacy={spacy_status}, stopwords={stopwords_status})"
 
 
+if __name__ == "__main__":
+    tk = Tokenizer(remove_stopwords=False)
+    s = "Information Retrieval is fun. Tokenization processes text."
+    print(tk)
+    print(tk.tokenize(s))
