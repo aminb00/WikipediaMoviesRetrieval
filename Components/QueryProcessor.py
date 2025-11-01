@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-from Tokenizer import Tokenizer
+from Tokenizer import tokenize
 
 class QueryProcessor:
     def __init__(self, index_state, k1=1.5, b=0.75):
@@ -14,13 +14,12 @@ class QueryProcessor:
         self.avgdl = sum(self.doc_lengths.values()) / self.N
         self.k1 = k1
         self.b = b
-        self.tk = Tokenizer()
 
     # -----------------------------
     # BM25 Retrieval
     # -----------------------------
     def compute_bm25_score(self, query):
-        query_terms = self.tk.tokenize(query)
+        query_terms = tokenize(query)
         scores = defaultdict(float)
 
         for term in query_terms:
@@ -45,7 +44,7 @@ class QueryProcessor:
     # SMART ltc.ltc Retrieval
     # -----------------------------
     def rank_smart(self, query, weighting="ltc.ltc", top_k=10):
-        tokens = self.tk.tokenize(query)
+        tokens = tokenize(query)
         if not tokens:
             return []
 

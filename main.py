@@ -7,6 +7,7 @@ import sys
 sys.path.append('Components')
 from Tokenizer import tokenize
 import Indexer
+from QueryProcessor import QueryProcessor
 
 print("="*80)
 print("Wikipedia Movies Retrieval System")
@@ -150,3 +151,48 @@ print("="*80)
 
 # Store index state globally for later use (querying, ranking)
 all_movies.index_state = index_state
+
+# ============================================================================
+# Query Processing Demo
+# ============================================================================
+print("\n" + "="*80)
+print("Query Processing Demo")
+print("="*80)
+
+# Initialize query processor
+qp = QueryProcessor(index_state, k1=1.5, b=0.75)
+
+# Example queries
+example_queries = [
+    "love story romantic comedy",
+    "space adventure alien planet",
+    "murder mystery detective investigation"
+]
+
+print("\n[Method 1] BM25 Ranking")
+print("-"*80)
+for query in example_queries:
+    print(f"\nQuery: '{query}'")
+    results = qp.compute_bm25_score(query)
+    if results:
+        print(f"  Top 5 results:")
+        for i, (title, score) in enumerate(results[:5], 1):
+            print(f"    {i}. {title} (score: {score:.4f})")
+    else:
+        print("  No results found.")
+
+print("\n[Method 2] SMART ltc.ltc (VSM)")
+print("-"*80)
+for query in example_queries:
+    print(f"\nQuery: '{query}'")
+    results = qp.rank_smart(query, weighting="ltc.ltc", top_k=10)
+    if results:
+        print(f"  Top 5 results:")
+        for i, (title, score) in enumerate(results[:5], 1):
+            print(f"    {i}. {title} (score: {score:.4f})")
+    else:
+        print("  No results found.")
+
+print("\n" + "="*80)
+print("Demo complete! You can now use the QueryProcessor for your own queries.")
+print("="*80)
