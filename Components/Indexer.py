@@ -26,14 +26,14 @@ def read_txt(path: str):
 # (a) MEMORY (RAM SPIMI)
 # Reference: IIR §4.3
 # =============================================================================
-def init_memory(tokenizer):
+def init_memory(tokenize_fn):
     """Initialize memory-resident indexer state."""
     return {
         "index": defaultdict(dict),  # term -> {doc_id: tf}
         "doc_len": {},
         "titles": {},
         "next_id": 0,
-        "tokenizer": tokenizer
+        "tokenize": tokenize_fn
     }
 
 
@@ -41,8 +41,7 @@ def index_doc_mem(st, title: str, text: str):
     """Index a single document using SPIMI algorithm."""
     did = st["next_id"]
     st["next_id"] += 1
-    tokenizer = st["tokenizer"]
-    toks = tokenizer.tokenize(text)
+    toks = st["tokenize"](text)
     st["doc_len"][did] = len(toks)
     st["titles"][did] = title
     for t, tf in Counter(toks).items():
@@ -68,7 +67,7 @@ def postings_mem(st, term: str):
 # (b) DISK (term-per-file, only relevant parts loaded)
 # Reference: IIR §5.2
 # =============================================================================
-def init_disk(index_dir="index", tokenizer=None):
+def init_disk(index_dir="index", tokenize_fn=None):
     """Initialize disk-based indexer state."""
     os.makedirs(os.path.join(index_dir, "terms"), exist_ok=True)
     return {
@@ -77,7 +76,7 @@ def init_disk(index_dir="index", tokenizer=None):
         "doc_len": {},
         "titles": {},
         "next_id": 0,
-        "tokenizer": tokenizer
+        "tokenize": tokenize_fn
     }
 
 
@@ -182,8 +181,7 @@ def build_disk(st, folder: str, read_fn=read_txt):
             title, text = read_fn(p)
             did = st["next_id"]
             st["next_id"] += 1
-            tokenizer = st["tokenizer"]
-            toks = tokenizer.tokenize(text)
+            toks = st["tokenize"](text)
             st["doc_len"][did] = len(toks)
             st["titles"][did] = title
             for t, tf in Counter(toks).items():
@@ -241,18 +239,17 @@ def postings_disk(st, term: str):
 # (c) UPDATABLE (aux RAM + tombstone + merge to disk)
 # Reference: IIR §4.5
 # =============================================================================
-def init_upd(index_dir="updindex", tokenizer=None, merge_threshold=100):
+def init_upd(index_dir="updindex", tokenize_fn=None, merge_threshold=100):
     """Initialize updatable indexer (disk + auxiliary RAM index).
     
     Args:
         merge_threshold: Auto-merge when auxiliary has this many documents (IIR §4.5)
     """
-    base = init_disk(index_dir, tokenizer)
+    base = init_disk(index_dir, tokenize_fn)
     load_disk_min(base)
     base.update({
         "aux": defaultdict(dict),  # term -> {doc_id: tf} (RAM)
         "deleted": set(),  # tombstone pattern
-        "tokenizer": tokenizer,
         "merge_threshold": merge_threshold
     })
     return base
@@ -263,8 +260,7 @@ def add_upd(st, title: str, text: str):
     Auto-merges if threshold exceeded (IIR §4.5)."""
     did = st["next_id"]
     st["next_id"] += 1
-    tokenizer = st["tokenizer"]
-    toks = tokenizer.tokenize(text)
+    toks = st["tokenize"](text)
     st["doc_len"][did] = len(toks)
     st["titles"][did] = title
     for t, tf in Counter(toks).items():

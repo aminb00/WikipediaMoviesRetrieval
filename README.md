@@ -1,51 +1,73 @@
 # WikipediaMoviesRetrieval
 
-Information Retrieval project using Wikipedia Movies dataset from Kaggle.
+A compact, inspectable Information Retrieval (IR) pipeline over the Wikipedia Movies dataset. We keep things simple and transparent; details and rationale are in the report.
 
-## Setup
+## What's inside (high level)
 
-### 1. Install Dependencies
+- **Tokenizer**: Minimal regex-based normalization (11 lines, zero dependencies)
+- **Indexer (SPIMI)**: Single-pass in-memory inverted index; plus disk variant and updatable mode
+- **Query Processor**: Retrieves and ranks documents based on user queries
+- **Main script**: Loads CSVs, EDA, tokenizes title+plot, builds index, prints stats and sample postings
 
-Install the Kaggle API package:
-
-```bash
-pip install kaggle
-```
-
-### 2. Configure Kaggle Credentials
-
-You need a Kaggle API token to download datasets. Follow these steps:
-
-1. Go to [kaggle.com](https://www.kaggle.com) and log in
-2. Click on your profile picture → **Settings**
-3. Scroll down to **API** section
-4. Click **Create New Token** (downloads `kaggle.json`)
-5. Move the file to the correct location:
-
-```bash
-mkdir -p ~/.kaggle
-mv ~/Downloads/kaggle.json ~/.kaggle/
-chmod 600 ~/.kaggle/kaggle.json
-```
-
-Alternatively, you can set environment variables:
-
-```bash
-export KAGGLE_USERNAME='your_username'
-export KAGGLE_KEY='your_api_key'
-```
-
-### 3. Download the Dataset
-
-Run the download script:
-
-```bash
-python download_dataset.py
-```
-
-The dataset will be downloaded to `data/wikipedia-movies/` directory.
+For the full design, references, and diagrams, see the PDF in `Documentation/`.
 
 ## Dataset
 
-- **Source**: [exactful/wikipedia-movies on Kaggle](https://www.kaggle.com/datasets/exactful/wikipedia-movies)
-- **Content**: Wikipedia data about movies
+- **Source**: Kaggle — exactful/wikipedia-movies
+- **Schema**: `title,image,plot` (we index `title + plot`; `image` URL is ignored)
+- **Size**: 17,830 movies across 6 decades
+  - 1970s: 1,770 | 1980s: 2,338 | 1990s: 3,105
+  - 2000s: 4,416 | 2010s: 4,960 | 2020s: 1,241
+- **Files**: Decade CSVs in `Data/`
+
+You can use the included `download_dataset.py` to fetch the CSVs (uses `kagglehub`). If already present, skip this step.
+
+## System Performance
+
+After indexing the complete dataset:
+- **Documents Indexed**: 17,830 movie plots
+- **Total Tokens**: 8,479,845 tokens processed
+- **Vocabulary Size**: 92,857 unique terms
+- **Total Postings**: 4,023,002 term-document pairs
+- **Avg Tokens/Doc**: ~476 tokens
+- **Index Density**: ~43 postings per term
+
+These metrics demonstrate efficient indexing of a medium-sized corpus with rich vocabulary coverage.
+
+## Requirements
+
+- Python 3.10+
+- Packages: `pandas` (and `kagglehub` if downloading dataset)
+
+
+## Run
+
+```bash
+python main.py
+```
+
+The script will:
+1. Load all decade CSVs from `Data/`
+2. Print dataset overview and EDA statistics
+3. Tokenize `title + plot` using regex tokenizer
+4. Build SPIMI inverted index (in-memory)
+5. Display index statistics and sample postings for common terms
+
+## Project Structure
+
+```
+WikipediaMoviesRetrieval/
+├── main.py                  # Entry point
+├── Components/
+│   ├── Tokenizer.py         # Regex-based tokenizer (11 lines)
+│   └── Indexer.py           # SPIMI indexing (memory, disk, updatable)
+├── Data/                    # Movie datasets by decade (CSV files)
+├── Documentation/
+│   ├── main.tex             # Technical report (LaTeX)
+│   └── main.pdf             # Compiled report
+└── download_dataset.py      # Dataset fetcher (kagglehub)
+```
+
+## Documentation
+
+This README is intentionally concise. Please see `Documentation/main.pdf` for the full report (motivation, design choices, and references).
