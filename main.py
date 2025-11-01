@@ -107,7 +107,7 @@ print("\n[6/7] Building Inverted Index (SPIMI)...")
 print("-"*80)
 
 # Initialize indexer state
-index_state = Indexer.init_memory()
+index_state = Indexer.init_memory(tokenize)
 
 # Index all documents
 for idx, row in all_movies.iterrows():
