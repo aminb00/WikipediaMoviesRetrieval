@@ -5,9 +5,10 @@ Wikipedia Movies Retrieval System - Main
 import pandas as pd
 import sys
 sys.path.append('Components')
-from Tokenizer import tokenize
+from Tokenizer import Tokenizer
 import Indexer
 
+tk = Tokenizer(remove_stopwords=False)
 print("="*80)
 print("Wikipedia Movies Retrieval System")
 print("="*80)
@@ -57,7 +58,7 @@ print("Processing movie titles and plots...")
 
 # Tokenize each movie (title + plot)
 all_movies['tokens'] = all_movies.apply(
-    lambda row: tokenize(str(row['title']) + ' ' + str(row['plot'])),
+    lambda row: tk.tokenize(str(row['title']) + ' ' + str(row['plot'])),
     axis=1
 )
 
@@ -107,7 +108,7 @@ print("\n[6/7] Building Inverted Index (SPIMI)...")
 print("-"*80)
 
 # Initialize indexer state
-index_state = Indexer.init_memory()
+index_state = Indexer.init_memory(tk)
 
 # Index all documents
 for idx, row in all_movies.iterrows():
@@ -150,3 +151,18 @@ print("="*80)
 
 # Store index state globally for later use (querying, ranking)
 all_movies.index_state = index_state
+
+from QueryProcessor import QueryProcessor
+
+print("\n[8/8] Testing Query Processor")
+print("-"*80)
+
+qp = QueryProcessor(index_state)
+
+query = "space mission to Mars"
+
+results = qp.rank_smart(query, weighting="ltc.lnc")
+
+print(f"\nTop results for query: '{query}'")
+for rank, (title, score) in enumerate(results, 1):
+    print(f"{rank:2d}. {title:50s}  cosine_sim={score:.4f}")
