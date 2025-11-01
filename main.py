@@ -166,3 +166,9 @@ results = qp.rank_smart(query, weighting="ltc.lnc")
 print(f"\nTop results for query: '{query}'")
 for rank, (title, score) in enumerate(results, 1):
     print(f"{rank:2d}. {title:50s}  cosine_sim={score:.4f}")
+
+results = qp.compute_bm25_score(query)
+
+print(f"\nTop results for query: '{query}' using BM25 ranking")
+for rank, (title, score) in enumerate(results, 1):
+    print(f"{rank:2d}. {title:50s}  BM25={score:.4f}")
