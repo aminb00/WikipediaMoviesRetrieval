@@ -1,0 +1,20 @@
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}System Architecture}{3}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Dataset}{4}{subsection.1.2}%
+\contentsline {section}{\numberline {2}Tokenizer [To Adjust and Complete]}{4}{section.2}%
+\contentsline {section}{\numberline {3}Indexer}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Memory Index – SPIMI Approach}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Disk Index – Term-per-File and Lazy Loading}{5}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Compression Implementation}{5}{subsubsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.3}Updatable Index – Auxiliary Index and Merge}{6}{subsection.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.1}Structure and Components}{6}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.2}Adding and Deleting Documents}{6}{subsubsection.3.3.2}%
+\contentsline {subsubsection}{\numberline {3.3.3}Merging Step}{7}{subsubsection.3.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.4}Design Rationale}{7}{subsubsection.3.3.4}%
+\contentsline {subsubsection}{\numberline {3.3.5}Implementation Outcome}{8}{subsubsection.3.3.5}%
+\contentsline {section}{\numberline {4}Query Processing}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Vector Space Model (VSM)}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}BM25 Ranking}{8}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Language Models}{8}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Conclusion}{8}{section.5}%
+\contentsline {section}{References}{8}{section*.2}%

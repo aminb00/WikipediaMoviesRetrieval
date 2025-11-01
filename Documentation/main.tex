@@ -1,0 +1,346 @@
+\documentclass[11pt,a4paper]{article}
+
+% Page layout
+\usepackage[a4paper,margin=2.5cm,top=3cm,bottom=3cm]{geometry}
+\usepackage{setspace}
+
+% Typography and fonts
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% Graphics and colors
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{uablue}{RGB}{0,61,165}
+
+% Links and references
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=uablue,
+    citecolor=uablue,
+    urlcolor=uablue,
+    bookmarksnumbered=true
+}
+\usepackage{natbib}
+\usepackage{url}
+
+% Code listings
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{gray!5},
+    captionpos=b
+}
+
+% Headers and footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{uablue}{Information Retrieval - Assignment 1}}
+\fancyhead[R]{\textcolor{uablue}{2025/2026}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Title page
+\title{
+    \vspace{-1cm}
+    \includegraphics[width=0.3\textwidth]{images/logoUantwerpen.png} \\[1cm]
+    {\huge\bfseries\textcolor{uablue}{WikipediaMoviesRetrieval}}\\[0.5cm]
+    {\Large Assignment 1}\\[0.3cm]
+    {\large Information Retrieval Course}\\
+    {\large Academic Year 2025/2026}
+}
+
+\author{
+    \textbf{Group Members:}\\[0.3cm]
+    \begin{tabular}{ll}
+        Alperen Davran & [Student ID] \\
+        Matteo Comi & [Student ID] \\
+        Shakh [Surname] & [Student ID] \\
+        Amin Borqal & s0259707 \\
+    \end{tabular}\\[1cm]
+    \textbf{University of Antwerp}\\
+    Faculty of Science\\
+    Department of Computer Science
+}
+
+\date{\today}
+
+\begin{document}
+
+% Title page
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+% Table of contents
+\tableofcontents
+\newpage
+
+% Set spacing for main content
+\onehalfspacing
+
+\section{Introduction}
+\label{sec:introduction}
+
+This project implements a compact, inspectable information retrieval (IR) pipeline over the Wikipedia Movies dataset. The emphasis is on a clear, minimal design that is easy to reason about and verify on a medium-sized collection. Each document is indexed as the concatenation of its \texttt{title} and \texttt{plot}; the original title is also stored as metadata for display.
+
+Scope:
+\begin{itemize}
+    \item Tokenization and normalization (lowercasing, punctuation removal, stopword filtering and stemming).
+    \item Inverted indexing with Single-Pass In-Memory Indexing (SPIMI), plus a disk-backed variant and a small updatable mode.
+    \item Query processing and ranking.
+\end{itemize}
+
+Non-goals:
+\begin{itemize}
+    \item Distributed or industrial-scale indexing.
+    \item Heavyweight external IR frameworks.
+\end{itemize}
+
+The implementation uses small, explicit Python modules. The design follows standard IR practice (e.g., Manning et al.) while keeping the code pragmatic for a ~18k-document collection.
+
+\subsection{System Architecture}
+
+Three modules with clear contracts:
+
+\begin{enumerate}
+    \item \textbf{Tokenizer} — Input: raw title+plot. Output: list of normalized tokens.
+    \item \textbf{Indexer} — Input: (doc id, tokens). Output: inverted index in memory or on disk.
+    \item \textbf{Query Processor} — Input: user query. Output: ranked doc ids with scores.
+\end{enumerate}
+
+Data flow:
+\noindent\texttt{CSV data -> Tokenizer -> Indexer -> Query Processor}
+
+Key in-memory structure (SPIMI):
+\begin{verbatim}
+index = { term: { doc_id: tf } }
+\end{verbatim}
+with auxiliary statistics (e.g., df, cf, per-document length) maintained for scoring.
+
+\newpage
+\subsection{Dataset}
+
+We use the Wikipedia Movies dataset from Kaggle (\url{https://www.kaggle.com/datasets/exactful/wikipedia-movies}). It contains approximately 17.8k movies across the 1970s–2020s. The CSV schema is \texttt{title,image,plot}. The \texttt{image} field is a URL and is not used for indexing; we index only the textual fields below:
+\begin{itemize}
+    \item \textbf{title} (string)
+    \item \textbf{plot} (string)
+\end{itemize}
+
+The document text is defined as \texttt{title + " " + plot}. Each record is assigned a sequential integer document id at load time. Cleaning and normalization are handled by the tokenizer; the source CSVs are left unchanged.
+
+\section{Tokenizer [To Adjust and Complete]}
+\label{sec:tokenizer}
+
+The tokenizer converts raw text into a normalized sequence of terms suitable for indexing and scoring. We use NLTK (Natural Language Toolkit), a Python library for natural language processing (\url{https://www.nltk.org/}), and follow standard guidance from \textit{Introduction to Information Retrieval} (IIR \S2.2--\S2.3) on tokenization and normalization.
+
+Processing steps:
+\begin{itemize}
+    \item \textbf{Tokenization (nltk py library)}: \texttt{word\_tokenize} over the concatenated \texttt{title + plot} string.
+    \item \textbf{Lowercasing}: all tokens are converted to lowercase.
+    \item \textbf{Filtering}: keep alphabetic tokens only (punctuation, numbers removed).
+    \item \textbf{Stopwords}: remove English stopwords (NLTK list).
+    \item \textbf{Stemming (optional)}: Porter stemmer; enabled by default.
+\end{itemize}
+
+Design notes (IIR \S2.3): stopword removal reduces noise from high-frequency function words; stemming conflates morphological variants and can improve recall at small cost to precision. For our mid-size collection, the simplicity and speed of Porter stemming are a pragmatic fit.
+
+Current usage in code:
+\begin{itemize}
+    \item \textbf{Analysis/EDA}: \texttt{Components/Tokenizer.py} is used to create tokens for statistics and exploration.
+    \item \textbf{Indexing}: the indexer uses a minimal built-in tokenizer (lowercasing + alphanumeric split) unless an external tokenizer is injected. This keeps dependencies light for the core SPIMI loop.
+\end{itemize}
+
+If desired, the same NLTK tokenizer can be injected into the indexer to unify preprocessing (e.g., pass a tokenizer to \texttt{Indexer.init\_memory(...)}).
+
+\section{Indexer}
+\label{sec:indexer}
+
+The indexer component implements three variants of inverted index construction, each suited for different use cases and scalability requirements.
+
+\subsection{Memory Index – SPIMI Approach}
+\label{subsec:memory}
+\textit{Reference: IIR §4.3}
+
+The memory index is based on the SPIMI (Single-Pass In-Memory Indexing) algorithm described in IIR §4.3.  
+The book emphasizes that SPIMI avoids sorting and writes complete inverted blocks directly to memory:  
+\textit{“SPIMI generates a complete inverted index for a block without sorting the terms.”}
+
+In our implementation, each document is tokenized and inserted into a Python dictionary:
+\begin{verbatim}
+index = { term: { doc_id: tf } }
+\end{verbatim}
+
+The dictionary grows automatically as new terms appear, thanks to Python’s hash-based data structure.
+This design keeps insertions roughly O(1) and enables quick term lookups.
+
+Because our dataset is small, we keep the entire index in memory.
+For larger collections, as explained in IIR Figure 4.4, SPIMI can be extended to write blocks to disk and merge them later.  
+The lecture slides also visualized this “block → partial index → final merge” workflow step by step.
+
+\subsection{Disk Index – Term-per-File and Lazy Loading}
+\label{subsec:disk}
+\textit{Reference: IIR §5.2, §5.3}
+
+The disk version focuses on storing the index persistently.
+Each term is stored in a separate file, making it easy to test and inspect.
+To avoid naming conflicts, we used MD5 hashing for term filenames:
+\begin{verbatim}
+path = index_dir + "/terms/" + hashlib.md5(term.encode()).hexdigest() + ".pkl"
+\end{verbatim}
+
+Alongside term files, we keep a \texttt{lexicon.pkl} file with metadata such as 
+\texttt{df} (document frequency), \texttt{cf} (collection frequency), and file path.
+This matches the structure described in IIR §5.2:  
+\textit{“An inverted index consists of a dictionary and a set of postings lists stored on disk.”}
+
+When querying, only the relevant term’s file is loaded —  
+this lazy-loading design aligns with the assignment goal of reading only the necessary index parts into memory.
+In class, this was highlighted under the slide “Efficient Index Storage and Access.”
+
+\subsubsection{Compression Implementation}
+\label{subsubsec:compression}
+\textit{Reference: IIR §5.3}
+To make the disk index smaller, we implemented both \textbf{gap encoding} and \textbf{Variable-Byte (VB)} compression.
+According to IIR §5.3, “gap encoding followed by variable byte coding gives a good balance between compression and speed.”
+Our implementation compresses each postings list as follows:
+\begin{verbatim}
+def _compress_postings(postings):
+    gaps = _gap_encode(postings)
+    compressed = bytearray()
+    for gap, tf in gaps:
+        compressed.extend(_vb_encode(gap))
+        compressed.extend(_vb_encode(tf))
+    return bytes(compressed)
+\end{verbatim}
+
+This combination reduced file size noticeably while keeping decoding fast.
+We chose VB instead of gamma codes because it is simpler, faster to decode in Python, and more suitable for small to mid-size datasets — 
+as also explained in the “Compression Techniques” lecture slide.
+
+\subsection{Updatable Index – Auxiliary Index and Merge}
+\label{subsec:updatable}
+\textit{Reference: IIR §4.5}
+
+The third mode adds support for updates, insertions, and deletions.  
+We followed the dynamic indexing model from IIR §4.5, which recommends keeping a small auxiliary index in memory and merging it periodically with the main on-disk index.
+This approach supports incremental updates efficiently without rebuilding the entire index.
+
+\subsubsection{Structure and Components}
+
+The updatable indexer maintains three main parts:
+\begin{itemize}
+    \item \textbf{Main on-disk index:} The compressed postings built earlier.
+    \item \textbf{Auxiliary in-memory index (\texttt{aux}):} Stores new or modified documents before merging.
+    \item \textbf{Tombstone set (\texttt{deleted}):} Tracks document IDs marked as deleted.
+\end{itemize}
+
+Initialization example:
+\begin{verbatim}
+def init_upd(index_dir="updindex", tokenizer=None):
+    base = init_disk(index_dir, tokenizer)
+    load_disk_min(base)
+    base.update({
+        "aux": defaultdict(dict),
+        "deleted": set()
+    })
+    return base
+\end{verbatim}
+
+\subsubsection{Adding and Deleting Documents}
+
+New documents are first indexed into the auxiliary memory index:
+\begin{verbatim}
+def add_upd(st, title, text):
+    did = st["next_id"]
+    st["next_id"] += 1
+    toks = re.findall(r"[a-z0-9]+", text.lower())
+    for t, tf in Counter(toks).items():
+        st["aux"][t][did] = tf
+    return did
+\end{verbatim}
+
+To delete a document, we simply mark it using a tombstone (instead of rewriting the entire index immediately):
+\begin{verbatim}
+def delete_upd(st, doc_id):
+    st["deleted"].add(doc_id)
+\end{verbatim}
+
+This idea matches the explanation in IIR §4.5:
+\textit{“We maintain a small auxiliary index in memory and occasionally merge it with the main index.”}
+In the lecture on dynamic indexing, this approach was illustrated as 
+\textit{“Fast updates using auxiliary memory and periodic merges.”}
+
+\subsubsection{Merging Step}
+
+When a merge is triggered, the auxiliary postings are merged with the main index,
+deleted documents are removed, and the postings are re-compressed:
+\begin{verbatim}
+def merge_upd(st):
+    for term in st["aux"].keys():
+        main = postings_disk(st, term) if term in st["lex"] else {}
+        main.update(st["aux"][term])
+        for d in list(main.keys()):
+            if d in st["deleted"]:
+                del main[d]
+        compressed = _compress_postings(main)
+        with open(_term_path(st["dir"], term), "wb") as f:
+            f.write(compressed)
+\end{verbatim}
+
+This mirrors the merge mechanism described in both the book (IIR §4.5) and the “Dynamic Indexing” lecture slides.
+
+\subsubsection{Design Rationale}
+
+We decided not to implement the more complex \textit{logarithmic merging} model (IIR §4.5) because it is meant for large-scale systems.
+Our single-level merge model is simpler and demonstrates the same concept clearly for small datasets.
+Logarithmic merging reduces the overall update cost from $O(T^2)$ to $O(T \log (T/n))$, but for this project, simplicity and clarity were our priorities.
+
+\subsubsection{Implementation Outcome}
+
+This version completes the full indexer lifecycle — from initial indexing to compression and dynamic updates —
+fully reflecting the concepts taught in both the book and the course slides.
+
+\section{Query Processing}
+\label{sec:query}
+
+\textit{[To be completed]}
+
+\subsection{Vector Space Model (VSM)}
+\label{subsec:vsm}
+
+\textit{[To be completed]}
+
+\subsection{BM25 Ranking}
+\label{subsec:bm25}
+
+\textit{[To be completed]}
+
+\subsection{Language Models}
+\label{subsec:lm}
+
+\textit{[To be completed]}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\textit{[To be completed]}
+
+\vspace{1cm}
+
+\section*{References}
+\addcontentsline{toc}{section}{References}
+
+\noindent
+Manning, C. D., Raghavan, P., \& Schütze, H. (2008). \textit{Introduction to Information Retrieval}. Cambridge University Press. \\
+Available at: \url{https://nlp.stanford.edu/IR-book/}
+
+\end{document}
