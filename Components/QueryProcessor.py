@@ -8,7 +8,15 @@ LOG = math.log
 class QueryProcessor:
     def __init__(self, index_state, k1=1.5, b=0.75):
         """
-        index_state: the dictionary returned by Indexer.init_memory() and built by Indexer.index_doc_mem()
+        Initialize QueryProcessor with index state.
+        
+        IMPORTANT: Query tokenization must match document tokenization.
+        Uses same settings: stemming enabled, stopwords kept.
+        
+        Args:
+            index_state: Dictionary from Indexer.init_memory()
+            k1: BM25 parameter (default 1.5)
+            b: BM25 length normalization (default 0.75)
         """
         self.index = index_state["index"]
         self.doc_lengths = index_state["doc_len"]
@@ -100,7 +108,8 @@ class QueryProcessor:
     # BM25 Retrieval
     # -----------------------------
     def compute_bm25_score(self, query):
-        query_terms = tokenize(query)
+        # Tokenize query with same settings as documents: stemming enabled, stopwords removed
+        query_terms = tokenize(query, remove_stopwords=True, apply_stemming=True)
         scores = defaultdict(float)
 
         for term in query_terms:
@@ -138,7 +147,8 @@ class QueryProcessor:
                       - norm: c=cosine, n=none
             top_k: number of results to return
         """
-        tokens = tokenize(query)
+        # Tokenize query with same settings as documents: stemming enabled, stopwords removed
+        tokens = tokenize(query, remove_stopwords=True, apply_stemming=True)
         if not tokens:
             return []
 
@@ -255,7 +265,8 @@ class QueryProcessor:
         Returns:
             List of (title, score) tuples, sorted by score descending
         """
-        query_terms = tokenize(query)
+        # Tokenize query with same settings as documents: stemming enabled, stopwords removed
+        query_terms = tokenize(query, remove_stopwords=True, apply_stemming=True)
         if not query_terms:
             return []
         

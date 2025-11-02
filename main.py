@@ -55,10 +55,14 @@ print(f"  - Max: {all_movies['plot_length'].max():.0f} characters")
 # Tokenize all documents
 print("\n[3/5] Tokenizing documents...")
 print("Processing movie titles and plots...")
+print("Using NLTK tokenization with stemming (Porter) for optimal IR performance...")
 
 # Tokenize each movie (title + plot)
+# For indexing: use stemming and remove stopwords
 all_movies['tokens'] = all_movies.apply(
-    lambda row: tokenize(str(row['title']) + ' ' + str(row['plot'])),
+    lambda row: tokenize(str(row['title']) + ' ' + str(row['plot']), 
+                        remove_stopwords=True, 
+                        apply_stemming=True),
     axis=1
 )
 
@@ -108,7 +112,9 @@ print("\n[6/7] Building Inverted Index (SPIMI)...")
 print("-"*80)
 
 # Initialize indexer state
-index_state = Indexer.init_memory(tokenize)
+# Use same tokenization settings: stemming enabled, stopwords removed
+tokenize_for_index = lambda text: tokenize(text, remove_stopwords=True, apply_stemming=True)
+index_state = Indexer.init_memory(tokenize_for_index)
 
 # Index all documents
 for idx, row in all_movies.iterrows():
