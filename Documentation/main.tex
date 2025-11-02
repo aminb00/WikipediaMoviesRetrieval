@@ -15,6 +15,10 @@
 \usepackage{xcolor}
 \definecolor{uablue}{RGB}{0,61,165}
 
+% Tables
+\usepackage{tabularx}
+\usepackage{booktabs}
+
 % Links and references
 \usepackage{hyperref}
 \hypersetup{
@@ -118,6 +122,97 @@ We use the Wikipedia Movies dataset from Kaggle (\url{https://www.kaggle.com/dat
 \end{itemize}
 
 The document text is defined as \texttt{title + plot}. Each record is assigned a sequential integer document id at load time. Cleaning and normalization are handled by the tokenizer; the source CSVs are left unchanged.
+
+
+\section*{Assignment Coverage Matrix}
+\addcontentsline{toc}{section}{Assignment Coverage Matrix}
+
+\begin{table}[h!]
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{@{} l c X @{}}
+\toprule
+\textbf{Component} & \textbf{Implemented} & \textbf{Where in Report/Code} \\
+\midrule
+Tokenizer (3pts) & Yes & \S\ref{sec:tokenizer}, 
+\texttt{Components/Tokenizer.py} \\
+Indexer RAM SPIMI (5pts) & Yes & \S\ref{subsec:memory}, \texttt{Components/Indexer.py:init\_memory} \\
+Disk index + Lazy-load (+2) & Yes & \S\ref{subsec:disk}, term-per-file, \texttt{lexicon.pkl} \\
+Updatable index (+2) & Yes & \S\ref{subsec:updatable}, aux + tombstones + merge \\
+VSM ltc.ltc (4pts) & Yes & \S\ref{sec:query}, \texttt{rank\_smart(..., "ltc.ltc")} \\
+VSM SMART variations (+2) & Yes & \S\ref{sec:query}, \texttt{"ntc.ltc"}, \texttt{"atc"}, \texttt{"lnc"} \\
+BM25 (+2) & Yes & \S\ref{subsec:bm25}, \texttt{compute\_bm25\_score()} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\newpage
+\section{How to Run}
+\label{sec:howtorun}
+
+All components of the retrieval system can be executed directly through the Docker container
+using the provided CLI script \texttt{cli.py}.  
+The following minimal commands are sufficient to build, test, and verify the system.
+
+\subsection*{Setup}
+\begin{lstlisting}[language=bash]
+# Clone and build the Docker image
+git clone https://github.com/aminb00/WikipediaMoviesRetrieval.git
+cd WikipediaMoviesRetrieval
+docker build -t wikipedia-retrieval:latest .
+
+# Download dataset (one-time)
+./run_docker.sh download_dataset.py
+\end{lstlisting}
+
+\subsection*{Indexing and Search}
+\begin{lstlisting}[language=bash]
+# Build in-memory index
+./run_docker.sh cli.py build --mode=memory --csv data/
+
+# Run a sample query
+./run_docker.sh cli.py search --mode=memory --test=bm25 \
+  --topk=5 --query "romantic love story"
+\end{lstlisting}
+
+\noindent\textbf{Expected output:}  
+A ranked list of relevant movie titles with their retrieval scores.
+
+\subsection*{Optional Comparison}
+\begin{lstlisting}[language=bash]
+# Compare memory vs. disk mode results
+./run_docker.sh cli.py compare --csv data/ \
+  --query "romantic love story" --test=ltc --topk=10
+\end{lstlisting}
+
+\subsection*{Full System Evaluation}
+\begin{lstlisting}[language=bash]
+# Run complete pipeline verification (all tasks)
+./run_docker.sh cli.py timeline --csv data/
+\end{lstlisting}
+
+\noindent This command executes all assignment components automatically:
+tokenization, index construction (memory/disk/updatable), and all retrieval models
+(VSM, SMART variants, BM25, Language Model).  
+
+\textbf{Example output excerpt:}
+\begin{lstlisting}
+[Task 11/12] Testing BM25 ...
+  10 results, top score: 11.858124 | Top 3:
+    Peter and Vandy (11.858124);
+    I Love You, I Love You Not (11.176060);
+    A Journal for Jordan (11.026044)
+
+[Task 12/12] Testing Language Model ...
+  5 results, top score: -19.555921 | Top 3:
+    The Lost Valentine (-19.555921);
+    Isn't It Romantic (2019 film) (-19.632408);
+    God of Love (film) (-19.789653)
+---------------------------------------------------------------------------
+Summary: 12/12 tasks completed successfully
+\end{lstlisting}
+
+\noindent All commands above can be executed from the project root using the prefix
+\texttt{./run\_docker.sh} to ensure the correct containerized environment is used.
 
 \section{Tokenizer}
 \label{sec:tokenizer}
