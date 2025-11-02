@@ -39,33 +39,184 @@ These metrics demonstrate efficient indexing of a medium-sized corpus with rich 
 - Python 3.10+
 - Packages: `pandas` (and `kagglehub` if downloading dataset)
 
+## Reproducibility
 
-## Run
+**Tested on:** Python 3.11+, macOS 14 / Ubuntu 22.04
+
+**Status:** ✅ All CLI commands tested and working
+
+### Setup
+
+```bash
+git clone https://github.com/aminb00/WikipediaMoviesRetrieval.git
+cd WikipediaMoviesRetrieval
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Download Dataset (if needed)
+
+```bash
+python download_dataset.py
+```
+
+This will download the Wikipedia Movies dataset from Kaggle to the `data/` folder.
+
+### Test CLI (Optional)
+
+Verify CLI is working correctly:
+
+```bash
+python test_cli.py
+```
+
+Expected output: All tests should pass (✓ PASS for all components).
+
+### Build the index (RAM + SPIMI)
+
+```bash
+python cli.py build --mode=memory --csv data/
+```
+
+### Build the index (Disk + compression + lazy-load)
+
+```bash
+python cli.py build --mode=disk --csv data/ --out idx_disk
+```
+
+### Build the updatable index (main+aux)
+
+```bash
+python cli.py build --mode=updatable --csv data/ --out idx_upd
+```
+
+### Query examples
+
+```bash
+# SMART VSM queries
+python cli.py search --mode=memory --model=ltc.ltc --topk=5 --query "space adventure alien planet"
+python cli.py search --mode=disk    --model=ntc.ltc --topk=5 --query "murder mystery detective"
+python cli.py search --mode=disk    --model=lnc.ltc --topk=5 --query "romantic love story"
+
+# BM25 ranking
+python cli.py search --mode=memory --model=bm25 --topk=5 --query "romantic love story"
+
+# Language Model (Dirichlet smoothing)
+python cli.py search --mode=memory --model=lm --topk=5 --query "space adventure alien"
+```
+
+**Available ranking models:**
+- **SMART notation**: `ltc.ltc`, `ntc.ltc`, `lnc.ltc`, `atc.ltc`, etc. 
+  - Format: `query_scheme.document_scheme` (e.g., `ltc.ltc` = log tf, idf, cosine for both query and docs)
+- **`bm25`**: BM25 ranking with k1=1.5, b=0.75
+- **`lm`**: Language Model with Dirichlet smoothing (μ=2000)
+
+**Note:** For `disk` and `updatable` modes, the index will be loaded into memory during query processing for optimal performance.
+
+### Update workflow (updatable)
+
+After building an updatable index, you can add, delete, and merge documents:
+
+```bash
+# Add a new document (automatically merges if threshold exceeded)
+python cli.py add --mode=updatable --title "New Film" --plot "A detective on Mars investigating alien mysteries..."
+
+# Delete a document by ID
+python cli.py delete --mode=updatable --docid 1234
+
+# Manually trigger merge (auxiliary index → main index)
+python cli.py merge --mode=updatable
+
+# Search after updates
+python cli.py search --mode=updatable --model=ltc.ltc --topk=5 --query "detective mars"
+```
+
+**Important:** Documents added via `add` are stored in auxiliary (RAM) index. Use `merge` to persist them to disk. Auto-merge occurs when auxiliary index reaches 100 documents (configurable).
+
+### Alternative: Run Full Pipeline (Legacy)
 
 ```bash
 python main.py
 ```
 
 The script will:
-1. Load all decade CSVs from `Data/`
+1. Load all decade CSVs from `data/`
 2. Print dataset overview and EDA statistics
 3. Tokenize `title + plot` using regex tokenizer
 4. Build SPIMI inverted index (in-memory)
 5. Display index statistics and sample postings for common terms
+6. Run query processing demos with:
+   - SMART ltc.ltc (VSM)
+   - SMART ntc.ltc (VSM)
+   - BM25 ranking
 
 ## Project Structure
 
 ```
 WikipediaMoviesRetrieval/
-├── main.py                  # Entry point
+├── cli.py                   # CLI interface (build, search, add, delete, merge)
+├── main.py                  # Legacy entry point (full pipeline demo)
+├── test_cli.py              # CLI test suite (verify all features work)
 ├── Components/
 │   ├── Tokenizer.py         # Regex-based tokenizer (11 lines)
-│   └── Indexer.py           # SPIMI indexing (memory, disk, updatable)
-├── Data/                    # Movie datasets by decade (CSV files)
+│   ├── Indexer.py           # SPIMI indexing (memory, disk, updatable)
+│   └── QueryProcessor.py   # VSM, BM25, Language Model ranking
+├── data/                    # Movie datasets by decade (CSV files)
 ├── Documentation/
 │   ├── main.tex             # Technical report (LaTeX)
 │   └── main.pdf             # Compiled report
-└── download_dataset.py      # Dataset fetcher (kagglehub)
+├── download_dataset.py      # Dataset fetcher (kagglehub)
+└── requirements.txt         # Python dependencies
+```
+
+## CLI Commands Reference
+
+### Build Commands
+
+| Command | Description |
+|---------|-------------|
+| `python cli.py build --mode=memory --csv data/` | Build in-memory index (fastest, RAM only) |
+| `python cli.py build --mode=disk --csv data/ --out idx_disk` | Build disk-based index (compressed, lazy-load) |
+| `python cli.py build --mode=updatable --csv data/ --out idx_upd` | Build updatable index (main + auxiliary) |
+
+### Search Commands
+
+| Command | Description |
+|---------|-------------|
+| `python cli.py search --mode=memory --model=ltc.ltc --topk=5 --query "query"` | Search with SMART notation |
+| `python cli.py search --mode=disk --model=bm25 --topk=5 --query "query"` | Search with BM25 |
+| `python cli.py search --mode=memory --model=lm --topk=5 --query "query"` | Search with Language Model |
+
+**Modes:**
+- `memory`: In-memory index (fastest query, requires all data in RAM)
+- `disk`: Disk-based index (compressed, loads terms on demand)
+- `updatable`: Updatable index (supports add/delete/merge operations)
+
+### Update Commands (Updatable Mode Only)
+
+| Command | Description |
+|---------|-------------|
+| `python cli.py add --mode=updatable --title "Title" --plot "Plot text"` | Add new document |
+| `python cli.py delete --mode=updatable --docid 1234` | Delete document by ID |
+| `python cli.py merge --mode=updatable` | Merge auxiliary → main index |
+
+## Testing
+
+Run the test suite to verify all features:
+
+```bash
+python test_cli.py
+```
+
+**Expected output:**
+```
+✓ PASS: CLI Syntax
+✓ PASS: Memory Build
+✓ PASS: Query Processing
+✓ PASS: Disk Build
+✓ PASS: Updatable
+✓ All tests passed!
 ```
 
 ## Documentation
