@@ -4,10 +4,11 @@
 #
 # Core dependencies:
 # - pandas: Used in main.py for data loading and manipulation
+# - nltk: Natural Language Toolkit for professional tokenization, stemming, stopwords
 # - kagglehub: Used in download_dataset.py to fetch datasets from Kaggle
 #
 # Components analysis:
-# - Components/Tokenizer.py: Only uses built-in 're' module
+# - Components/Tokenizer.py: Uses NLTK (word_tokenize, PorterStemmer, stopwords) following IIR best practices
 # - Components/Indexer.py: Only uses built-in modules (os, pickle, hashlib, collections)
 # - Components/QueryProcessor.py: Only uses built-in modules (math, collections)
 # - indexer_validation.ipynb: Uses pandas for notebook testing
@@ -16,6 +17,9 @@
 
 # Data manipulation and analysis
 pandas>=2.0.0
+
+# Natural Language Processing (IIR best practices)
+nltk>=3.8.0
 
 # Dataset download from Kaggle (optional - only needed if downloading dataset)
 kagglehub>=0.2.0
