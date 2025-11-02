@@ -12,8 +12,8 @@ if ! docker ps > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if image exists
-if ! docker images | grep -q "$IMAGE"; then
+# Check if image exists (more reliable check)
+if ! docker image inspect "$IMAGE" > /dev/null 2>&1; then
     echo "⚠️  Docker image not found. Building..."
     docker build -t "$IMAGE" .
 fi
