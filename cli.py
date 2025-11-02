@@ -9,6 +9,7 @@ import sys
 import os
 import pandas as pd
 from pathlib import Path
+from collections import defaultdict, Counter
 
 sys.path.append('Components')
 from Tokenizer import tokenize
@@ -109,28 +110,45 @@ def build_index_disk(csv_path, output_dir):
     # Initialize disk indexer
     index_state = Indexer.init_disk(output_dir, tokenize)
     
-    # Create temporary folder with text files (Indexer.build_disk expects folder)
-    import tempfile
-    import shutil
+    # Read documents from CSV
+    documents = read_csv_documents(csv_path)
     
-    temp_dir = tempfile.mkdtemp()
-    try:
-        documents = read_csv_documents(csv_path)
+    # Build index directly (not using build_disk which expects text files)
+    # We'll manually index like build_disk does but preserve titles
+    tmp = defaultdict(dict)  # term -> {doc_id: tf}
+    
+    for i, (title, text) in enumerate(documents):
+        did = index_state["next_id"]
+        index_state["next_id"] += 1
+        toks = tokenize(text)
+        index_state["doc_len"][did] = len(toks)
+        index_state["titles"][did] = title  # Preserve actual title!
         
-        # Write documents as text files
-        for i, (title, text) in enumerate(documents):
-            file_path = os.path.join(temp_dir, f"doc_{i:06d}.txt")
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(text)
-        
-        # Build disk index from temp folder
-        Indexer.build_disk(index_state, temp_dir)
-        
-        print(f"✓ Built disk index with {len(documents)} documents")
-        print(f"  Vocabulary size: {len(index_state['lex']):,}")
-        
-    finally:
-        shutil.rmtree(temp_dir)
+        for t, tf in Counter(toks).items():
+            tmp[t][did] = tf
+    
+    # Write term files (compressed: gap + VB encoding)
+    for term, post in tmp.items():
+        path = Indexer._term_path(index_state["dir"], term)
+        compressed = Indexer._compress_postings(post)
+        with open(path, "wb") as f:
+            f.write(compressed)
+        index_state["lex"][term] = {
+            "path": path,
+            "df": len(post),
+            "cf": int(sum(post.values()))
+        }
+    
+    # Save lexicon and metadata
+    import pickle
+    with open(os.path.join(index_state["dir"], "lexicon.pkl"), "wb") as f:
+        pickle.dump(index_state["lex"], f)
+    
+    with open(os.path.join(index_state["dir"], "meta.pkl"), "wb") as f:
+        pickle.dump({"titles": index_state["titles"], "doc_len": index_state["doc_len"]}, f)
+    
+    print(f"✓ Built disk index with {len(documents)} documents")
+    print(f"  Vocabulary size: {len(index_state['lex']):,}")
     
     return index_state
 
@@ -187,6 +205,10 @@ def get_query_processor(index_state, mode):
         else:  # updatable
             get_postings_fn = Indexer.postings_upd
         
+        # Ensure titles are loaded (for disk mode)
+        if mode == 'disk' and not index_state.get('titles'):
+            Indexer.load_disk_min(index_state)
+        
         # Convert to memory format
         memory_index = {}
         terms = list(index_state.get('lex', {}).keys())
@@ -199,11 +221,27 @@ def get_query_processor(index_state, mode):
             if postings:
                 memory_index[term] = postings
         
+        # Get titles dict - for updatable, titles should already be in index_state
+        # from load_disk_min (called in init_upd) and add_upd adds titles when adding docs
+        titles = dict(index_state.get('titles', {}))
+        
+        # For updatable, ensure all aux documents have titles
+        if mode == 'updatable' and 'aux' in index_state:
+            # Check if any aux documents are missing titles
+            aux_doc_ids = set()
+            for term_postings in index_state['aux'].values():
+                aux_doc_ids.update(term_postings.keys())
+            # Titles should already be added by add_upd, but let's ensure
+            for doc_id in aux_doc_ids:
+                if doc_id not in titles:
+                    # Fallback: use doc_id as title if missing
+                    titles[doc_id] = f"Document {doc_id}"
+        
         # Create adapted state in memory format
         adapted_state = {
             'index': memory_index,
-            'doc_len': index_state.get('doc_len', {}),
-            'titles': index_state.get('titles', {})
+            'doc_len': dict(index_state.get('doc_len', {})),
+            'titles': titles
         }
         
         return QueryProcessor(adapted_state, k1=1.5, b=0.75)
