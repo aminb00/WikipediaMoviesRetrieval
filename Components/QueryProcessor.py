@@ -41,7 +41,7 @@ class QueryProcessor:
         return [(self.titles[doc_id], score) for doc_id, score in ranked[:10]]
 
     # -----------------------------
-    # SMART ltc.ltc Retrieval
+    # SMART ltc.ltc/ntc.ltc Retrieval
     # -----------------------------
     def rank_smart(self, query, weighting="ltc.ltc", top_k=10):
         tokens = tokenize(query)
@@ -63,20 +63,42 @@ class QueryProcessor:
                 w_q = (1 + math.log(tf)) * idf
             elif weighting.startswith("ntc"):
                 w_q = tf * idf
+            else:
+                w_q = tf * idf  # default
             query_weights[term] = w_q
 
         # Normalize query vector
         norm_q = math.sqrt(sum(w ** 2 for w in query_weights.values()))
-        for term in query_weights:
-            query_weights[term] /= norm_q
+        if norm_q > 0:  # Added safety check
+            for term in query_weights:
+                query_weights[term] /= norm_q
 
         # Score each document
         scores = defaultdict(float)
+        doc_norms = defaultdict(float)
+
         for term, w_q in query_weights.items():
             postings = self.index.get(term, {})
+            df = len(postings)
+            idf = math.log(self.N / df)
+            
             for doc_id, tf in postings.items():
-                w_d = 1 + math.log(tf)
+                if tf <= 0:
+                    continue
+                if weighting.endswith("ltc"):
+                    w_d = (1 + math.log(tf)) * idf
+                elif weighting.endswith("ntc"):
+                    w_d = tf * idf
+                else:
+                    w_d = (1 + math.log(tf)) * idf
                 scores[doc_id] += w_q * w_d
+                doc_norms[doc_id] += w_d ** 2
+
+        # Normalize document vectors (cosine normalization)
+        for doc_id in scores:
+            norm_d = math.sqrt(doc_norms[doc_id])
+            if norm_d > 0:
+                scores[doc_id] /= norm_d
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return [(self.titles[doc_id], score) for doc_id, score in ranked[:top_k]]
