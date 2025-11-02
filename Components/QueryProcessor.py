@@ -2,6 +2,9 @@ import math
 from collections import defaultdict
 from Tokenizer import tokenize
 
+# Logarithm base consistency: use natural log throughout
+LOG = math.log
+
 class QueryProcessor:
     def __init__(self, index_state, k1=1.5, b=0.75):
         """
@@ -14,6 +17,23 @@ class QueryProcessor:
         self.avgdl = sum(self.doc_lengths.values()) / self.N if self.N > 0 else 1
         self.k1 = k1
         self.b = b
+        
+        # Precompute per-doc max tf over ALL terms (not just query terms)
+        # This is needed for augmented tf weighting
+        self.doc_max_tf_all = defaultdict(int)
+        for _, postings in self.index.items():
+            for doc_id, tf in postings.items():
+                if tf > self.doc_max_tf_all[doc_id]:
+                    self.doc_max_tf_all[doc_id] = tf
+        
+        # Precompute collection term frequencies for language models
+        # collection_tf[term] = total occurrences of term across all documents
+        # collection_tokens = total tokens in collection
+        self.collection_tf = defaultdict(int)
+        for term, postings in self.index.items():
+            self.collection_tf[term] = sum(postings.values())
+        self.collection_tokens = sum(self.doc_lengths.values())
+        
         self.doc_norms = {
             "lnc": self._compute_doc_norms("lnc"),
             "ltc": self._compute_doc_norms("ltc"),  
@@ -44,29 +64,25 @@ class QueryProcessor:
         
         doc_norms = defaultdict(float)
         
-        doc_max_tf = defaultdict(int)
-        if tf_scheme == 'a':
-            for _, postings in self.index.items():
-                for doc_id, tf in postings.items():
-                    doc_max_tf[doc_id] = max(doc_max_tf[doc_id], tf)
+        # Use precomputed doc_max_tf_all for augmented tf
         
         for term, postings in self.index.items():
             df = len(postings)
             if df == 0:
                 continue
             
-            idf = math.log(self.N / df) if idf_scheme == 't' else 1.0
+            idf = LOG(self.N / df) if idf_scheme == 't' else 1.0
             
             for doc_id, tf in postings.items():
                 if tf <= 0:
                     continue
                 
                 if tf_scheme == 'l': 
-                    tf_weight = 1 + math.log(tf)
+                    tf_weight = 1 + LOG(tf)
                 elif tf_scheme == 'n':
                     tf_weight = tf
                 elif tf_scheme == 'a':
-                    max_tf = doc_max_tf[doc_id]
+                    max_tf = self.doc_max_tf_all.get(doc_id, 0)
                     tf_weight = 0.5 + 0.5 * (tf / max_tf) if max_tf > 0 else 0
                 else:
                     tf_weight = tf
@@ -93,7 +109,7 @@ class QueryProcessor:
             if df == 0:
                 continue
 
-            idf = math.log((self.N) / df)
+            idf = LOG((self.N) / df)
             for doc_id, tf in postings.items():
                 dl = self.doc_lengths.get(doc_id, 0)
                 denom = tf + self.k1 * (1 - self.b + self.b * (dl / self.avgdl))
@@ -153,7 +169,7 @@ class QueryProcessor:
                 continue
             
             if query_scheme[0] == 'l':
-                tf_weight = 1 + math.log(tf)
+                tf_weight = 1 + LOG(tf)
             elif query_scheme[0] == 'n':
                 tf_weight = tf
             elif query_scheme[0] == 'a': 
@@ -162,7 +178,7 @@ class QueryProcessor:
                 tf_weight = tf
             
             if query_scheme[1] == 't':
-                idf = math.log(self.N / df)
+                idf = LOG(self.N / df)
                 tf_weight *= idf
             
             query_weights[term] = tf_weight
@@ -173,16 +189,10 @@ class QueryProcessor:
                 for term in query_weights:
                     query_weights[term] /= norm_q
 
-        doc_max_tf = defaultdict(int)
-        if doc_scheme[0] == 'a':
-            for term in query_weights.keys():
-                postings = self.index.get(term, {})
-                for doc_id, tf in postings.items():
-                    doc_max_tf[doc_id] = max(doc_max_tf[doc_id], tf)
+        # Use precomputed doc_max_tf_all for augmented tf (not query-only max tf)
 
         # Score documents
         scores = defaultdict(float)
-        doc_weights_sq = defaultdict(float)
 
         for term, w_q in query_weights.items():
             postings = self.index.get(term, {})
@@ -190,18 +200,18 @@ class QueryProcessor:
             if df == 0:
                 continue
             
-            idf = math.log(self.N / df) if doc_scheme[1] == 't' else 1.0
+            idf = LOG(self.N / df) if doc_scheme[1] == 't' else 1.0
             
             for doc_id, tf in postings.items():
                 if tf <= 0:
                     continue
                 
                 if doc_scheme[0] == 'l':
-                    tf_weight = 1 + math.log(tf)
+                    tf_weight = 1 + LOG(tf)
                 elif doc_scheme[0] == 'n': 
                     tf_weight = tf
                 elif doc_scheme[0] == 'a':
-                    max_tf = doc_max_tf[doc_id]
+                    max_tf = self.doc_max_tf_all.get(doc_id, 0)
                     tf_weight = 0.5 + 0.5 * (tf / max_tf) if max_tf > 0 else 0
                 else:
                     tf_weight = tf
@@ -210,21 +220,88 @@ class QueryProcessor:
                 
                 scores[doc_id] += w_q * w_d
 
-                if doc_scheme[2] == 'c':
-                    doc_weights_sq[doc_id] += w_d ** 2
-
+        # Apply cosine normalization using precomputed norms
         if doc_scheme[2] == 'c':
-            if doc_scheme in self.doc_norms:
-                for doc_id in scores:
-                    norm_d = self.doc_norms[doc_scheme].get(doc_id, 1.0)
-                    if norm_d > 0:
-                        scores[doc_id] /= norm_d
-            else:
-                for doc_id in scores:
-                    norm_d = math.sqrt(doc_weights_sq[doc_id])
-                    if norm_d > 0:
-                        scores[doc_id] /= norm_d
+            if doc_scheme not in self.doc_norms:
+                raise ValueError(f"Document scheme '{doc_scheme}' not precomputed. Supported schemes: {list(self.doc_norms.keys())}")
+            for doc_id in scores:
+                norm_d = self.doc_norms[doc_scheme].get(doc_id, 1.0)
+                if norm_d > 0:
+                    scores[doc_id] /= norm_d
 
         # Rank and return results
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return [(self.titles[doc_id], score) for doc_id, score in ranked[:top_k]]
+
+    # -----------------------------
+    # Language Model Retrieval (Dirichlet Prior Smoothing)
+    # -----------------------------
+    def compute_lm_score(self, query, mu=2000, top_k=10):
+        """
+        Rank documents using Language Model with Dirichlet prior smoothing.
+        
+        Formula: P(q|d) = sum_{t in q} log((tf_{t,d} + μ * P(t|C)) / (|d| + μ))
+        where:
+        - tf_{t,d} = term frequency of term t in document d
+        - P(t|C) = collection probability = collection_tf[t] / collection_tokens
+        - |d| = document length
+        - μ = Dirichlet smoothing parameter (default: 2000)
+        
+        Args:
+            query: search query string
+            mu: Dirichlet smoothing parameter (default: 2000)
+            top_k: number of results to return
+            
+        Returns:
+            List of (title, score) tuples, sorted by score descending
+        """
+        query_terms = tokenize(query)
+        if not query_terms:
+            return []
+        
+        # Compute collection probabilities P(t|C) for query terms
+        # P(t|C) = collection_tf[t] / collection_tokens
+        collection_probs = {}
+        for term in query_terms:
+            if term in self.collection_tf:
+                collection_probs[term] = self.collection_tf[term] / self.collection_tokens
+            else:
+                # Term not in collection: use small epsilon to avoid log(0)
+                collection_probs[term] = 1.0 / self.collection_tokens if self.collection_tokens > 0 else 1e-10
+        
+        # Collect candidate documents (documents containing at least one query term)
+        candidate_docs = set()
+        term_postings = {}
+        for term in query_terms:
+            postings = self.index.get(term, {})
+            if postings:
+                term_postings[term] = postings
+                candidate_docs.update(postings.keys())
+        
+        # Score documents
+        # For each candidate document, sum log probabilities over ALL query terms
+        scores = defaultdict(float)
+        
+        for doc_id in candidate_docs:
+            doc_length = self.doc_lengths.get(doc_id, 0)
+            if doc_length == 0:
+                continue
+            
+            # Sum log probabilities for all query terms
+            for term in query_terms:
+                # Get term frequency in document (0 if term doesn't appear)
+                tf = term_postings.get(term, {}).get(doc_id, 0)
+                P_t_C = collection_probs[term]
+                
+                # Dirichlet smoothing formula
+                numerator = tf + mu * P_t_C
+                denominator = doc_length + mu
+                
+                # Add log probability for this term-document pair
+                if numerator > 0 and denominator > 0:
+                    scores[doc_id] += LOG(numerator / denominator)
+        
+        # Sort results
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        # Return doc titles + scores
         return [(self.titles[doc_id], score) for doc_id, score in ranked[:top_k]]
