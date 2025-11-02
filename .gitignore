@@ -1,1 +1,13 @@
 .DS_Store
+.env
+.idx_disk/*
+.idx_mem/*
+.idx_upd/*
+.idx_aux/*
+.idx_aux_disk/*
+.idx_aux_mem
+.idx_aux_upd/*
+.idx_aux_disk_upd
+.idx_aux_mem_upd/*
+.idx_aux_disk_mem_upd
+.idx_aux_disk_mem_upd/* 
