@@ -9,11 +9,9 @@ A compact Information Retrieval (IR) pipeline with SPIMI indexing, VSM/BM25/Lang
 git clone https://github.com/aminb00/WikipediaMoviesRetrieval.git
 cd WikipediaMoviesRetrieval
 
-# Build Docker image
+2. # Build Docker image
 docker build -t wikipedia-retrieval:latest .
 
-# 2. Download dataset (one-time)
-./run_docker.sh download_dataset.py
 ```
 
 ## Assignment Evaluation - Component Testing
