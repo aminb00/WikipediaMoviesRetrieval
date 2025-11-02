@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation build artifacts
+Documentation/*.aux
+Documentation/*.log
+Documentation/*.out
+Documentation/*.synctex.gz
+Documentation/*.toc
+
+# Index directories (will be created at runtime)
+idx_disk/
+idx_upd/
+index_memory.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Test outputs
+*.pkl
+*.pickle
+
+# Data (large files, should be downloaded separately)
+# data/*.csv
+

@@ -86,13 +86,15 @@ def build_index_memory(csv_path, output_dir=None):
     print(f"✓ Indexed {len(documents)} documents")
     print(f"  Vocabulary size: {len(index_state['index']):,}")
     
-    # Save index state if output_dir specified
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-        import pickle
-        with open(os.path.join(output_dir, 'index_memory.pkl'), 'wb') as f:
-            pickle.dump(index_state, f)
-        print(f"✓ Saved index to {output_dir}/index_memory.pkl")
+    # Always save index state (default to current directory if not specified)
+    if not output_dir:
+        output_dir = '.'
+    os.makedirs(output_dir, exist_ok=True)
+    import pickle
+    index_file = os.path.join(output_dir, 'index_memory.pkl')
+    with open(index_file, 'wb') as f:
+        pickle.dump(index_state, f)
+    print(f"✓ Saved index to {index_file}")
     
     return index_state
 
@@ -299,13 +301,17 @@ def main():
             
             # Load index
             if args.mode == 'memory':
-                if os.path.exists(os.path.join(index_dir, 'index_memory.pkl')):
-                    index_state = load_index(args.mode, index_dir)
-                else:
-                    # Assume index_state is in-memory (from previous build)
-                    print("Warning: Memory index not found. Did you build it first?")
+                index_file = os.path.join(index_dir, 'index_memory.pkl')
+                if not os.path.exists(index_file):
+                    print(f"Error: Memory index not found at {index_file}")
+                    print("Please build the index first: python cli.py build --mode=memory --csv data/")
                     sys.exit(1)
+                index_state = load_index(args.mode, index_dir)
             else:
+                if not os.path.exists(index_dir):
+                    print(f"Error: Index directory not found: {index_dir}")
+                    print(f"Please build the index first: python cli.py build --mode={args.mode} --csv data/ --out {index_dir}")
+                    sys.exit(1)
                 index_state = load_index(args.mode, index_dir)
             
             # Get query processor
