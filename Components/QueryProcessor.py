@@ -11,28 +11,70 @@ class QueryProcessor:
         self.doc_lengths = index_state["doc_len"]
         self.titles = index_state["titles"]
         self.N = len(self.doc_lengths)
-        self.avgdl = sum(self.doc_lengths.values()) / self.N
+        self.avgdl = sum(self.doc_lengths.values()) / self.N if self.N > 0 else 1
         self.k1 = k1
         self.b = b
-        self.doc_norms = self._compute_doc_norms()
+        self.doc_norms = {
+            "lnc": self._compute_doc_norms("lnc"),
+            "ltc": self._compute_doc_norms("ltc"),  
+            "nnc": self._compute_doc_norms("nnc"), 
+            "ntc": self._compute_doc_norms("ntc"),
+            "anc": self._compute_doc_norms("anc"),
+            "atc": self._compute_doc_norms("atc"),
+        }
 
-    def _compute_doc_norms(self):
-        """Pre-compute document norms"""
+    def _compute_doc_norms(self, scheme):
+        """
+        Pre-compute document norms for a specific weighting scheme.
+        SMART notation: tfn.idfn.normalization
+        - tf: l=log, n=natural, a=augmented
+        - idf: t=idf, n=none
+        - norm: c=cosine, n=none
+        """
+        if len(scheme) != 3:
+            raise ValueError(f"Invalid SMART scheme: {scheme}")
+        
+        tf_scheme = scheme[0]
+        idf_scheme = scheme[1]
+        norm_scheme = scheme[2]
+        
+        # If no cosine normalization, return empty dict
+        if norm_scheme != 'c':
+            return {}
+        
         doc_norms = defaultdict(float)
         
-        for _, postings in self.index.items():
+        doc_max_tf = defaultdict(int)
+        if tf_scheme == 'a':
+            for _, postings in self.index.items():
+                for doc_id, tf in postings.items():
+                    doc_max_tf[doc_id] = max(doc_max_tf[doc_id], tf)
+        
+        for term, postings in self.index.items():
             df = len(postings)
             if df == 0:
                 continue
-            idf = math.log(self.N / df)
+            
+            idf = math.log(self.N / df) if idf_scheme == 't' else 1.0
             
             for doc_id, tf in postings.items():
                 if tf <= 0:
                     continue
-                w_d = (1 + math.log(tf)) * idf
+                
+                if tf_scheme == 'l': 
+                    tf_weight = 1 + math.log(tf)
+                elif tf_scheme == 'n':
+                    tf_weight = tf
+                elif tf_scheme == 'a':
+                    max_tf = doc_max_tf[doc_id]
+                    tf_weight = 0.5 + 0.5 * (tf / max_tf) if max_tf > 0 else 0
+                else:
+                    tf_weight = tf
+                
+                w_d = tf_weight * idf
                 doc_norms[doc_id] += w_d ** 2
         
-        # Take square root
+        # Cosine normalization
         for doc_id in doc_norms:
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
         
@@ -64,62 +106,125 @@ class QueryProcessor:
         return [(self.titles[doc_id], score) for doc_id, score in ranked[:10]]
 
     # -----------------------------
-    # SMART ltc.ltc/ntc.ltc Retrieval
+    # SMART VSM Retrieval (Any variation)
     # -----------------------------
     def rank_smart(self, query, weighting="ltc.ltc", top_k=10):
+        """
+        Rank documents using SMART notation.
+        
+        Args:
+            query: search query string
+            weighting: SMART notation (e.g., "ltc.ltc", "lnc.ltc", "ntc.ntc")
+                      Format: query_scheme.document_scheme
+                      Each scheme: [tf][idf][norm]
+                      - tf: l=log, n=natural, a=augmented
+                      - idf: t=idf, n=none
+                      - norm: c=cosine, n=none
+            top_k: number of results to return
+        """
         tokens = tokenize(query)
         if not tokens:
             return []
 
+        # Parse weighting scheme
+        parts = weighting.split('.')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid SMART notation: {weighting}. Expected format: 'xxx.xxx'")
+        
+        query_scheme = parts[0]
+        doc_scheme = parts[1]
+        
+        if len(query_scheme) != 3 or len(doc_scheme) != 3:
+            raise ValueError(f"Invalid SMART notation: {weighting}. Each part must be 3 characters.")
+
+        # Count query term frequencies
         query_tf = defaultdict(int)
         for t in tokens:
             query_tf[t] += 1
 
-        # Query weighting
+        # Find max tf in query for augmented normalization
+        max_query_tf = max(query_tf.values()) if query_tf else 1
+
+        # Compute query weights
         query_weights = {}
         for term, tf in query_tf.items():
             df = len(self.index.get(term, {}))
             if df == 0:
                 continue
-            idf = math.log(self.N / df)
-            if weighting.startswith("ltc"):
-                w_q = (1 + math.log(tf)) * idf
-            elif weighting.startswith("ntc"):
-                w_q = tf * idf
+            
+            if query_scheme[0] == 'l':
+                tf_weight = 1 + math.log(tf)
+            elif query_scheme[0] == 'n':
+                tf_weight = tf
+            elif query_scheme[0] == 'a': 
+                tf_weight = 0.5 + 0.5 * (tf / max_query_tf)
             else:
-                w_q = tf * idf  # default
-            query_weights[term] = w_q
+                tf_weight = tf
+            
+            if query_scheme[1] == 't':
+                idf = math.log(self.N / df)
+                tf_weight *= idf
+            
+            query_weights[term] = tf_weight
 
-        # Normalize query vector
-        norm_q = math.sqrt(sum(w ** 2 for w in query_weights.values()))
-        if norm_q > 0:
-            for term in query_weights:
-                query_weights[term] /= norm_q
+        if query_scheme[2] == 'c':
+            norm_q = math.sqrt(sum(w ** 2 for w in query_weights.values()))
+            if norm_q > 0:
+                for term in query_weights:
+                    query_weights[term] /= norm_q
 
-        # Score each document
+        doc_max_tf = defaultdict(int)
+        if doc_scheme[0] == 'a':
+            for term in query_weights.keys():
+                postings = self.index.get(term, {})
+                for doc_id, tf in postings.items():
+                    doc_max_tf[doc_id] = max(doc_max_tf[doc_id], tf)
+
+        # Score documents
         scores = defaultdict(float)
+        doc_weights_sq = defaultdict(float)
 
         for term, w_q in query_weights.items():
             postings = self.index.get(term, {})
             df = len(postings)
-            idf = math.log(self.N / df)
+            if df == 0:
+                continue
+            
+            idf = math.log(self.N / df) if doc_scheme[1] == 't' else 1.0
             
             for doc_id, tf in postings.items():
                 if tf <= 0:
                     continue
-                if weighting.endswith("ltc"):
-                    w_d = (1 + math.log(tf)) * idf
-                elif weighting.endswith("ntc"):
-                    w_d = tf * idf
+                
+                if doc_scheme[0] == 'l':
+                    tf_weight = 1 + math.log(tf)
+                elif doc_scheme[0] == 'n': 
+                    tf_weight = tf
+                elif doc_scheme[0] == 'a':
+                    max_tf = doc_max_tf[doc_id]
+                    tf_weight = 0.5 + 0.5 * (tf / max_tf) if max_tf > 0 else 0
                 else:
-                    w_d = (1 + math.log(tf)) * idf
+                    tf_weight = tf
+                
+                w_d = tf_weight * idf
+                
                 scores[doc_id] += w_q * w_d
 
-        # Normalize using pre-computed document norms
-        for doc_id in scores:
-            norm_d = self.doc_norms.get(doc_id, 1.0)
-            if norm_d > 0:
-                scores[doc_id] /= norm_d
+                if doc_scheme[2] == 'c':
+                    doc_weights_sq[doc_id] += w_d ** 2
 
+        if doc_scheme[2] == 'c':
+            if doc_scheme in self.doc_norms:
+                for doc_id in scores:
+                    norm_d = self.doc_norms[doc_scheme].get(doc_id, 1.0)
+                    if norm_d > 0:
+                        scores[doc_id] /= norm_d
+            else:
+                for doc_id in scores:
+                    norm_d = math.sqrt(doc_weights_sq[doc_id])
+                    if norm_d > 0:
+                        scores[doc_id] /= norm_d
+
+        # Rank and return results
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return [(self.titles[doc_id], score) for doc_id, score in ranked[:top_k]]
