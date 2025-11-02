@@ -425,40 +425,97 @@ Logarithmic merging reduces the overall update cost from $O(T^2)$ to $O(T \log (
 This version completes the full indexer lifecycle — from initial indexing to compression and dynamic updates —
 fully reflecting the concepts taught in both the book and the course slides.
 
+
 \section{Query Processing}
 \label{sec:query}
-
 Query processing is the stage of an information retrieval system in which a user's query is analyzed, interpreted, and matched against an indexed document collection to produce a ranked list of relevant results. The main goal of query processing is to efficiently return the most relevant documents that satisfy the user's information need.
 
-\label{subsec:vsm}
-
 \subsection{Vector Space Model (VSM)}
-
-The Vector Space Model was implemented with the SMART weighting scheme \texttt{ltc.ltc}, 
-and extended to support additional variations such as \texttt{ntc.ltc}. 
+\label{subsec:vsm}
+The Vector Space Model was implemented with full support for any SMART weighting scheme variation, 
+including the required \texttt{ltc.ltc} and extended schemes such as \texttt{lnc.ltc}, \texttt{ntc.ntc}, 
+\texttt{anc.atc}, and others. 
 This model computes document-query similarity through the cosine of their weighted term vectors.
 
-In practice, each query is tokenized, term frequencies are counted, and TF-IDF weights are applied according to the selected scheme. 
-For \texttt{ltc.ltc}, the term frequency is logarithmically scaled, while \texttt{ntc.ltc} uses a natural term frequency. 
-Both models include IDF weighting and cosine normalization.
+\subsubsection{SMART Notation}
+SMART notation follows the format \texttt{abc.def}, where:
+\begin{itemize}
+    \item The first three characters (\texttt{abc}) specify the query weighting scheme
+    \item The last three characters (\texttt{def}) specify the document weighting scheme
+    \item Each scheme consists of: [term frequency][inverse document frequency][normalization]
+\end{itemize}
 
-Example code fragment:
+Supported components include:
+\begin{itemize}
+    \item \textbf{Term Frequency (TF):} 
+        \texttt{l} = logarithmic ($1 + \log(tf)$), 
+        \texttt{n} = natural ($tf$), 
+        \texttt{a} = augmented ($0.5 + 0.5 \cdot \frac{tf}{\max(tf)}$)
+    \item \textbf{Inverse Document Frequency (IDF):} 
+        \texttt{t} = idf ($\log(\frac{N}{df})$), 
+        \texttt{n} = none ($1.0$)
+    \item \textbf{Normalization:} 
+        \texttt{c} = cosine normalization, 
+        \texttt{n} = no normalization
+\end{itemize}
 
+\subsubsection{Implementation}
+The implementation follows the FASTCOSINESCORE algorithm (Manning et al., IIR §7.1) 
+for efficient retrieval. Key optimization: document vector norms are pre-computed during 
+initialization for common SMART schemes (\texttt{lnc}, \texttt{ltc}, \texttt{nnc}, \texttt{ntc}, 
+\texttt{anc}, \texttt{atc}), avoiding redundant computation during query processing.
+
+For each query:
+\begin{enumerate}
+    \item Tokenize the query and compute term frequencies
+    \item Calculate query weights according to the specified scheme (first part of SMART notation)
+    \item Apply cosine normalization to the query vector if specified
+    \item For each query term, retrieve postings and accumulate document scores
+    \item Normalize document scores using pre-computed document norms
+    \item Return top-$k$ ranked documents
+\end{enumerate}
+
+Example code fragment for query weighting:
 \begin{verbatim}
-if weighting.startswith("ltc"):
-    w_q = (1 + math.log(tf)) * idf
-elif weighting.startswith("ntc"):
-    w_q = tf * idf
+# TF component for query
+if query_scheme[0] == 'l':  # logarithmic
+    tf_weight = 1 + math.log(tf)
+elif query_scheme[0] == 'n':  # natural
+    tf_weight = tf
+elif query_scheme[0] == 'a':  # augmented
+    tf_weight = 0.5 + 0.5 * (tf / max_query_tf)
+
+# IDF component for query
+if query_scheme[1] == 't':  # idf
+    idf = math.log(self.N / df)
+    tf_weight *= idf
 \end{verbatim}
 
-After weighting and normalization, the system computes document scores as the dot product between query and document vectors. 
-The top-\textit{k} ranked titles are then returned to the user. 
-This modular design allows additional SMART schemes to be added with minimal changes.
+Document weights are computed similarly based on the document weighting scheme (second part 
+of SMART notation). The system uses pre-computed document norms to efficiently normalize 
+document scores:
+
+\begin{verbatim}
+# Pre-computed during initialization
+self.doc_norms = {
+    "ltc": self._compute_doc_norms("ltc"),
+    "ntc": self._compute_doc_norms("ntc"),
+    # ... other schemes
+}
+
+# Used during query processing
+for doc_id in scores:
+    norm_d = self.doc_norms[doc_scheme].get(doc_id, 1.0)
+    if norm_d > 0:
+        scores[doc_id] /= norm_d
+\end{verbatim}
+
+This pre-computation approach ensures that document norms are calculated using \textbf{all terms 
+in each document}, not just query terms, which is critical for correct cosine normalization. 
+The modular design allows any SMART scheme combination to be queried with minimal overhead.
 
 \subsection{BM25 Ranking}
 \label{subsec:bm25}
-
-
 The BM25 model was implemented as an alternative to the VSM to provide more robust ranking 
 on collections with varying document lengths. 
 The method \texttt{compute\_bm25\_score()} calculates a BM25 score for each document 
@@ -473,7 +530,6 @@ For every matching document, the following operations are performed:
 \end{itemize}
 
 Example code excerpt:
-
 \begin{verbatim}
 denom = tf + k1 * (1 - b + b * (dl / avgdl))
 score = idf * (tf * (k1 + 1)) / denom
@@ -484,12 +540,8 @@ Results are sorted in descending order, and the top 10 titles are returned.
 In testing, BM25 produced slightly more balanced rankings for longer documents 
 compared to the vector space model.
 
-
-
-
 \section{Conclusion}
 \label{sec:conclusion}
-
 This assignment implemented a full information retrieval pipeline over the Wikipedia Movies dataset, 
 covering tokenization, indexing, and query processing. 
 The system successfully indexed 17,830 movie documents with a vocabulary of 92,857 unique terms 
@@ -497,11 +549,19 @@ and over four million total postings, averaging 43.3 postings per term.
 This confirmed the efficiency of the SPIMI-based indexer and the correctness of the posting statistics.
 
 The query processor integrated two retrieval models: 
-BM25 and the Vector Space Model (VSM) using SMART \texttt{ltc.ltc} and \texttt{ntc.ltc}  weighting. 
-Both were tested on multiple queries to evaluate ranking quality. 
+BM25 and the Vector Space Model (VSM) with full support for any SMART weighting scheme variation. 
+The required \texttt{ltc.ltc} scheme was implemented along with extended support for schemes like 
+\texttt{lnc.ltc}, \texttt{ntc.ntc}, \texttt{anc.atc}, and others, covering all combinations of 
+logarithmic/natural/augmented term frequency, with/without IDF, and with/without cosine normalization.
+
+Both models were tested on multiple queries to evaluate ranking quality. 
 Results showed consistent and interpretable rankings for different query types. 
 BM25 performed slightly better on descriptive, longer queries, while SMART weighting favored 
-documents with higher term concentration.
+documents with higher term concentration. The implementation follows the FASTCOSINESCORE algorithm 
+with pre-computed document norms for efficiency, ensuring O(1) normalization per document during 
+query processing.
+
+
 \newpage
 \section{Experimental Verification (Input–Output Demonstration)}
 \label{sec:verification}
