@@ -3,6 +3,7 @@
 % Page layout
 \usepackage[a4paper,margin=2.5cm,top=3cm,bottom=3cm]{geometry}
 \usepackage{setspace}
+\setlength{\headheight}{14pt}
 
 % Typography and fonts
 \usepackage[utf8]{inputenc}
@@ -119,8 +120,9 @@ We use the Wikipedia Movies dataset from Kaggle (\url{https://www.kaggle.com/dat
 The document text is defined as \texttt{title + plot}. Each record is assigned a sequential integer document id at load time. Cleaning and normalization are handled by the tokenizer; the source CSVs are left unchanged.
 
 \section{Tokenizer}
+\label{sec:tokenizer}
 
-Tokenisation is the first layer of our pipeline and is shared by both document indexing and query processing, so that terms are always compared in the same space (\texttt{remove\_stopwords=False}, \texttt{apply\_stemming=True}).
+Tokenisation is the first layer of our pipeline and is shared by both document indexing and query processing, so that terms are always compared in the same space (\texttt{remove\_stopwords=True}, \texttt{apply\_stemming=True}).
 
 \subsection{NLTK-based pipeline}
 
@@ -129,6 +131,7 @@ We rely on the Natural Language Toolkit (\textbf{NLTK}) {\url{https://www.nltk.o
 \begin{enumerate}
     \item \textbf{Tokenisation}: \texttt{word\_tokenize} splits the text handling punctuation and contractions better than a simple regex.
     \item \textbf{Normalisation}: all tokens are lowercased and only alphanumeric items are kept.
+    \item \textbf{Stopword removal}: common English stopwords (e.g. \textit{the}, \textit{is}, \textit{in}) are filtered out.
     \item \textbf{Stemming}: \texttt{PorterStemmer} reduces inflected forms to a common stem (e.g. \textit{detective}, \textit{detectives}, \textit{detecting} $\rightarrow$ \textit{detect}).
 \end{enumerate}
 
@@ -136,15 +139,15 @@ Example:
 \begin{quote}
 \textit{``The detective investigates three murders in the city.''}
 \end{quote}
-$\rightarrow$ \texttt{[the, detect, investig, three, murder, in, the, citi]}
+$\rightarrow$ \texttt{[detect, investig, three, murder, citi]}
 
 \subsection{Design choices}
 
-\textbf{Stopwords.} We keep stopwords because: (i) we may need phrase/proximity queries (e.g. film titles); (ii) BM25 / VSM with IDF already down-weight very frequent terms, so explicit removal gives little gain.
+\textbf{Stopwords.} We remove stopwords because: (i) they constitute a large fraction of tokens but carry little semantic content; (ii) BM25 and VSM already apply IDF weighting, and removing stopwords reduces index size and speeds up query processing with minimal loss in retrieval quality for most queries. For phrase or proximity queries that rely on word order (e.g. exact film titles), stopwords can be optionally retained in a separate field or module.
 
 \textbf{Numbers.} We keep numerals since they convey useful signals in movie data (years, sequels, versions).
 
-\textbf{Effect on vocabulary.} On our 17{,}830 plots, enabling Porter stemming reduces the vocabulary by about 30\%, grouping morphological variants and improving recall for queries like ``detective investigation''.
+\textbf{Effect on vocabulary.} On our 17{,}830 plots, removing stopwords and enabling Porter stemming significantly reduces the vocabulary, grouping morphological variants and eliminating high-frequency common words. This improves both index efficiency and recall for content-bearing queries like ``detective investigation''.
 
 \medskip
 \noindent For the general tokenisation principles we followed \emph{Introduction to Information Retrieval}, ch.~2, in particular §§2.2--2.4.
@@ -300,27 +303,142 @@ fully reflecting the concepts taught in both the book and the course slides.
 \section{Query Processing}
 \label{sec:query}
 
-\textit{[To be completed]}
+Query processing analyzes the user’s text, maps it into the same token space used for indexing, and ranks documents by estimated relevance. We implemented two standard models from IIR (ch.~6–7): the Vector Space Model (SMART weighting) and BM25. Both models use IDF, which down-weights frequent terms; this is the main reason we can safely retain stopwords in the tokenization stage.
 
-\subsection{Vector Space Model (VSM)}
+\subsection{Vector Space Model (SMART ltc.ltc)}
 \label{subsec:vsm}
 
-\textit{[To be completed]}
+Let $N$ be the number of documents and $df_t$ the document frequency of term $t$. We use the natural logarithm for inverse document frequency:
+\[
+    \mathrm{idf}_t = \ln\!\bigg(\frac{N}{df_t}\bigg)\,.
+\]
+For SMART \texttt{ltc.ltc}, we apply log-augmented TF and cosine normalization to both query and documents. For a term $t$ with term frequency $tf_{t,x}$ in a vector $x \in \{q,d\}$ (query or document), the weight is
+\[
+    w_{t,x} = (1 + \ln tf_{t,x})\, \mathrm{idf}_t\,.
+\]
+Vectors are then $\ell_2$-normalized, and similarity is computed with cosine:
+\[
+    \mathrm{score}(q,d) 
+    = \frac{\sum\limits_{t\in q\cap d} w_{t,q}\, w_{t,d}}{\|q\|\, \|d\|}\,.
+\]
+We also support \texttt{ntc.ltc}, which uses raw term frequency (no log) on the query side:
+\[
+        w^{\mathrm{ntc}}_{t,q} = tf_{t,q}\, \mathrm{idf}_t\,.
+\]
+In both variants, IDF reduces the impact of very frequent terms; cosine normalization counteracts document-length effects typical of long movie plots.
 
-\subsection{BM25 Ranking}
+\subsection{BM25}
 \label{subsec:bm25}
 
-\textit{[To be completed]}
+BM25 further adjusts term contributions by document length with two parameters, $k_1$ and $b$. With $dl$ the document length (in tokens) and $\overline{dl}$ the corpus average length, we use $k_1=1.5$ and $b=0.75$:
+\[
+    \mathrm{score}(q,d) = \sum_{t\in q} \mathrm{idf}_t 
+    \cdot \frac{tf_{t,d}(k_1+1)}{tf_{t,d} + k_1\left(1-b + b\, \frac{dl}{\overline{dl}}\right)}\,.
+\]
+For consistency with our VSM implementation, we use $\mathrm{idf}_t = \ln(N/df_t)$; standard BM25 variants with $\ln\!\big(\frac{N-df_t+0.5}{df_t+0.5}\big)$ are also common and can be substituted with minimal code changes. BM25 often surfaces documents whose length differs from the average, complementing cosine-normalized VSM.
 
-\subsection{Language Models}
-\label{subsec:lm}
 
-\textit{[To be completed]}
+
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\textit{[To be completed]}
+This assignment implemented a full information retrieval pipeline over the Wikipedia Movies dataset, 
+covering tokenization, indexing, and query processing. 
+The system successfully indexed 17,830 movie documents with a vocabulary of 65,526 unique terms 
+and 3,680,051 total postings, averaging 56.2 postings per term. 
+This confirmed the efficiency of the SPIMI-based indexer and the correctness of the posting statistics.
+
+The query processor integrated two retrieval models: 
+BM25 and the Vector Space Model (VSM) using SMART \texttt{ltc.ltc} and \texttt{ntc.ltc}  weighting. 
+Both were tested on multiple queries to evaluate ranking quality. 
+Results showed consistent and interpretable rankings for different query types. 
+BM25 performed slightly better on descriptive, longer queries, while SMART weighting favored 
+documents with higher term concentration.
+
+\subsection*{Example Results}
+
+The following table summarizes the top retrieved titles for a few example queries.
+
+\begin{verbatim}
+[Method 1] SMART ltc.ltc (VSM)
+--------------------------------------------------------------------------------
+Query: "love love story romantic comedy"
+    1. Can I Do It... 'Til I Need Glasses? (score: 0.4132)
+    2. The Golden Boys (score: 0.2951)
+    3. Folk Hero & Funny Guy (score: 0.2572)
+    4. Pie in the Sky (1996 film) (score: 0.2445)
+    5. Burning Annie (score: 0.2337)
+
+Query: "space adventure alien planet"
+    1. The Brother from Another Planet (score: 0.2918)
+    2. Codependent Lesbian Space Alien Seeks Same (score: 0.2619)
+    3. Metamorphosis: The Alien Factor (score: 0.2418)
+    4. Final Days of Planet Earth (score: 0.2274)
+    5. Star Raiders: The Adventures of Saber Raine (score: 0.2123)
+
+Query: "murder mystery detective investigation"
+    1. Final Combination (score: 0.2128)
+    2. House of Bodies (score: 0.2050)
+    3. One of Us Tripped (score: 0.1887)
+    4. Murder She Purred: A Mrs. Murphy Mystery (score: 0.1815)
+    5. Martial Law 2: Undercover (score: 0.1806)
+
+
+[Method 2] SMART ntc.ltc (VSM)
+--------------------------------------------------------------------------------
+Query: "love love story romantic comedy"
+    1. Can I Do It... 'Til I Need Glasses? (score: 0.4016)
+    2. The Golden Boys (score: 0.2869)
+    3. Folk Hero & Funny Guy (score: 0.2500)
+    4. Pie in the Sky (1996 film) (score: 0.2377)
+    5. Isn't It Romantic (2019 film) (score: 0.2291)
+
+Query: "space adventure alien planet"
+    1. The Brother from Another Planet (score: 0.2918)
+    2. Codependent Lesbian Space Alien Seeks Same (score: 0.2619)
+    3. Metamorphosis: The Alien Factor (score: 0.2418)
+    4. Final Days of Planet Earth (score: 0.2274)
+    5. Star Raiders: The Adventures of Saber Raine (score: 0.2123)
+
+Query: "murder mystery detective investigation"
+    1. Final Combination (score: 0.2128)
+    2. House of Bodies (score: 0.2050)
+    3. One of Us Tripped (score: 0.1887)
+    4. Murder She Purred: A Mrs. Murphy Mystery (score: 0.1815)
+    5. Martial Law 2: Undercover (score: 0.1806)
+
+
+[Method 3] BM25 Ranking
+--------------------------------------------------------------------------------
+Query: "love love story romantic comedy"
+    1. Isn't It Romantic (2019 film) (score: 20.5524)
+    2. Just Another Romantic Wrestling Comedy (score: 17.3777)
+    3. Big Ain't Bad (score: 16.5540)
+    4. Punchline (film) (score: 16.1760)
+    5. Butch Jamie (score: 15.0094)
+
+Query: "space adventure alien planet"
+    1. Codependent Lesbian Space Alien Seeks Same (score: 20.5140)
+    2. Star Raiders: The Adventures of Saber Raine (score: 19.8484)
+    3. Independence Day: Resurgence (score: 19.5832)
+    4. Cosmic Sin (score: 19.4521)
+    5. The Adventures of Captain Zoom in Outer Space (score: 19.3419)
+
+Query: "murder mystery detective investigation"
+    1. Massage Parlor Murders! (score: 15.1448)
+    2. House of Bodies (score: 14.8520)
+    3. Final Combination (score: 14.7663)
+    4. Murder by Death (score: 14.5096)
+    5. Exposed (2016 film) (score: 14.3995)
+\end{verbatim}
+
+The results confirm that the retrieval component behaves consistently across different scoring schemes. 
+BM25 tends to assign higher numeric scores and emphasizes document length normalization, 
+while SMART weighting keeps values normalized through cosine similarity. 
+Overall, the system returns relevant and explainable results, validating the effectiveness of the implemented ranking models.
+
+
 
 \vspace{1cm}
 
@@ -331,9 +449,20 @@ fully reflecting the concepts taught in both the book and the course slides.
 Manning, C. D., Raghavan, P., \& Schütze, H. (2008). \textit{Introduction to Information Retrieval}. Cambridge University Press. \\
 Available at: \url{https://nlp.stanford.edu/IR-book/}
 
-\medskip
 \noindent
-Bird, S., Klein, E., \& Loper, E. (2009). \textit{Natural Language Processing with Python}. O'Reilly Media. \\
-NLTK project: \url{https://www.nltk.org/}
+Calders, T., \& Tokpo, E. (n.d.). \textit{Information Retrieval: Index Construction and Maintenance}. Lecture slides, University of Antwerp.
+
+\noindent
+Calders, T., \& Tokpo, E. (n.d.). \textit{Information Retrieval: Evaluation and Feedback Expansion}. Lecture slides, University of Antwerp.
+
+\noindent
+University of Antwerp. (n.d.). \textit{Information Retrieval: Boolean search and VSM}. Lecture slides.
+
+\noindent
+University of Antwerp. (n.d.). \textit{Information Retrieval: Other retrieval models}. Lecture slides.
+
+\noindent
+Bird, S., Klein, E., \& Loper, E. (2009). \textit{Natural Language Processing with Python}. O'Reilly Media. See also the NLTK project website: \url{https://www.nltk.org}.
+
 
 \end{document}
