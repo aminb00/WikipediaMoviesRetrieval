@@ -14,6 +14,29 @@ class QueryProcessor:
         self.avgdl = sum(self.doc_lengths.values()) / self.N
         self.k1 = k1
         self.b = b
+        self.doc_norms = self._compute_doc_norms()
+
+    def _compute_doc_norms(self):
+        """Pre-compute document norms"""
+        doc_norms = defaultdict(float)
+        
+        for _, postings in self.index.items():
+            df = len(postings)
+            if df == 0:
+                continue
+            idf = math.log(self.N / df)
+            
+            for doc_id, tf in postings.items():
+                if tf <= 0:
+                    continue
+                w_d = (1 + math.log(tf)) * idf
+                doc_norms[doc_id] += w_d ** 2
+        
+        # Take square root
+        for doc_id in doc_norms:
+            doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
+        
+        return dict(doc_norms)
 
     # -----------------------------
     # BM25 Retrieval
@@ -69,13 +92,12 @@ class QueryProcessor:
 
         # Normalize query vector
         norm_q = math.sqrt(sum(w ** 2 for w in query_weights.values()))
-        if norm_q > 0:  # Added safety check
+        if norm_q > 0:
             for term in query_weights:
                 query_weights[term] /= norm_q
 
         # Score each document
         scores = defaultdict(float)
-        doc_norms = defaultdict(float)
 
         for term, w_q in query_weights.items():
             postings = self.index.get(term, {})
@@ -92,11 +114,10 @@ class QueryProcessor:
                 else:
                     w_d = (1 + math.log(tf)) * idf
                 scores[doc_id] += w_q * w_d
-                doc_norms[doc_id] += w_d ** 2
 
-        # Normalize document vectors (cosine normalization)
+        # Normalize using pre-computed document norms
         for doc_id in scores:
-            norm_d = math.sqrt(doc_norms[doc_id])
+            norm_d = self.doc_norms.get(doc_id, 1.0)
             if norm_d > 0:
                 scores[doc_id] /= norm_d
 
