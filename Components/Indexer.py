@@ -37,11 +37,16 @@ def init_memory(tokenize_fn):
     }
 
 
-def index_doc_mem(st, title: str, text: str):
+def index_doc_mem(st, title: str, text: str = None, tokens=None):
     """Index a single document using SPIMI algorithm."""
     did = st["next_id"]
     st["next_id"] += 1
-    toks = st["tokenize"](text)
+    if tokens is None:
+        if text is None:
+            raise ValueError("Either text or tokens must be provided to index_doc_mem.")
+        toks = st["tokenize"](text)
+    else:
+        toks = tokens
     st["doc_len"][did] = len(toks)
     st["titles"][did] = title
     for t, tf in Counter(toks).items():

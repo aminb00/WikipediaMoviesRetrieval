@@ -119,8 +119,7 @@ index_state = Indexer.init_memory(tokenize_for_index)
 # Index all documents
 for idx, row in all_movies.iterrows():
     title = str(row['title'])
-    text = str(row['title']) + ' ' + str(row['plot'])
-    Indexer.index_doc_mem(index_state, title, text)
+    Indexer.index_doc_mem(index_state, title, tokens=row['tokens'])
     
     if (idx + 1) % 5000 == 0:
         print(f"  Indexed {idx + 1} documents...")
