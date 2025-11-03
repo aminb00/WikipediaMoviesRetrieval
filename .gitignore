@@ -10,4 +10,11 @@
 .idx_aux_disk_upd
 .idx_aux_mem_upd/*
 .idx_aux_disk_mem_upd
-.idx_aux_disk_mem_upd/* 
+.idx_aux_disk_mem_upd/* __pycache__/
+*.pyc
+.DS_Store
+index_memory.pkl
+*.aux
+*.log
+*.out
+*.synctex.gz
