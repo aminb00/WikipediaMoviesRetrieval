@@ -1,20 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.conda/
+venv/
+env/
+ENV/
+
+# macOS
 .DS_Store
-.env
-.idx_disk/*
-.idx_mem/*
-.idx_upd/*
-.idx_aux/*
-.idx_aux_disk/*
-.idx_aux_mem
-.idx_aux_upd/*
-.idx_aux_disk_upd
-.idx_aux_mem_upd/*
-.idx_aux_disk_mem_upd
-.idx_aux_disk_mem_upd/* __pycache__/
-*.pyc
-.DS_Store
+
+# Index files (generated)
 index_memory.pkl
+.idx_*/
+
+# LaTeX temporary files
 *.aux
 *.log
 *.out
 *.synctex.gz
+*.toc
+*.fdb_latexmk
+*.fls
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Backup files
+*.backup
+*.bak
